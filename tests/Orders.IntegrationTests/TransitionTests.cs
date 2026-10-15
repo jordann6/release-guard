@@ -48,6 +48,39 @@ public sealed class TransitionTests(DatabaseFixture database) : OrdersApiTestBas
     }
 
     [Fact]
+    public async Task Cancellation_reason_is_stored_and_returned()
+    {
+        var (id, etag) = await CreateAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/orders/{id}/transitions")
+        {
+            Content = JsonContent.Create(new { target = "Cancelled", reason = "duplicate order" }),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", etag);
+
+        using var response = await Client.SendAsync(request, Ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var get = await Client.GetAsync($"/orders/{id}", Ct);
+        var order = await get.Content.ReadFromJsonAsync<OrderDto>(Ct);
+        Assert.Equal("Cancelled", order!.Status);
+        Assert.Equal("duplicate order", order.CancellationReason);
+    }
+
+    [Fact]
+    public async Task Reason_on_a_non_cancelling_transition_is_400()
+    {
+        var (id, etag) = await CreateAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/orders/{id}/transitions")
+        {
+            Content = JsonContent.Create(new { target = "Confirmed", reason = "because" }),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", etag);
+
+        using var response = await Client.SendAsync(request, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Stale_if_match_is_412()
     {
         var (id, original) = await CreateAsync();

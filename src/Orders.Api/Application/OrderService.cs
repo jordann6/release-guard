@@ -77,6 +77,7 @@ internal sealed partial class OrderService(
     public async Task<TransitionResult> TransitionAsync(
         Guid id,
         OrderStatus target,
+        string? reason,
         uint expectedVersion,
         CancellationToken cancellationToken)
     {
@@ -100,7 +101,7 @@ internal sealed partial class OrderService(
                 $"An order cannot move from {order.Status} to {target}.");
         }
 
-        order.TransitionTo(target, clock.GetUtcNow());
+        order.TransitionTo(target, clock.GetUtcNow(), reason);
 
         // The UPDATE is conditional on the version the client read, not merely the one
         // loaded above. A concurrent writer between the read and this save loses here.

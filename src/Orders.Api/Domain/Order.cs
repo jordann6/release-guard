@@ -12,6 +12,7 @@ public sealed class Order
     public const int MaxSkuLength = 64;
     public const int MaxCustomerReferenceLength = 128;
     public const int MaxQuantity = 1000;
+    public const int MaxCancellationReasonLength = 500;
 
     private static readonly FrozenDictionary<OrderStatus, OrderStatus[]> AllowedTransitions =
         new Dictionary<OrderStatus, OrderStatus[]>
@@ -66,6 +67,12 @@ public sealed class Order
 
     public OrderStatus Status { get; private set; }
 
+    /// <summary>
+    /// Why the order was cancelled. Nullable, added by an expand-only migration, so the
+    /// previous release keeps working against the new schema (ADR-0003).
+    /// </summary>
+    public string? CancellationReason { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -81,11 +88,27 @@ public sealed class Order
 
     public bool CanTransitionTo(OrderStatus target) => NextStates(Status).Contains(target);
 
-    public void TransitionTo(OrderStatus target, DateTimeOffset now)
+    public void TransitionTo(OrderStatus target, DateTimeOffset now, string? reason = null)
     {
         if (!CanTransitionTo(target))
         {
             throw new InvalidOrderTransitionException(Status, target);
+        }
+
+        if (reason is not null && target != OrderStatus.Cancelled)
+        {
+            throw new ArgumentException("A reason is only recorded when cancelling.", nameof(reason));
+        }
+
+        if (reason is { Length: > MaxCancellationReasonLength })
+        {
+            throw new ArgumentException(
+                $"Cancellation reason must be at most {MaxCancellationReasonLength} characters.", nameof(reason));
+        }
+
+        if (target == OrderStatus.Cancelled)
+        {
+            CancellationReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         }
 
         Status = target;
