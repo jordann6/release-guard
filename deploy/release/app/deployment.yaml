@@ -49,6 +49,11 @@ spec:
                 secretKeyRef:
                   name: orders-db
                   key: app
+            - name: Orders__PaymentsEndpoint
+              valueFrom:
+                configMapKeyRef:
+                  name: orders-runtime
+                  key: Payments__Endpoint
             - name: Release__Version
               valueFrom:
                 fieldRef:
