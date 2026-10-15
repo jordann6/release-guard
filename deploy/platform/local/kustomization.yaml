@@ -36,6 +36,14 @@ patches:
       - op: add
         path: /spec/insecure
         value: true
+  # Fail broken rollouts quickly in local scenarios (AWS keeps the base 4 minutes).
+  - target:
+      kind: Kustomization
+      name: orders-app
+    patch: |
+      - op: replace
+        path: /spec/timeout
+        value: 90s
   - target:
       kind: ServiceAccount
       name: verifier

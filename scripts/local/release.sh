@@ -10,8 +10,9 @@
 #               stands in for override.yml, where the grant needs an environment approval.
 # Exit codes follow releasectl: 3 blocked, 4 verification failed or timed out.
 set -euo pipefail
+# shellcheck source=scripts/local/lib.sh
+source "$(dirname "$0")/lib.sh"
 
-repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 source_dir="$repo_root"
 commit="$(git -C "$repo_root" rev-parse HEAD)"
 promote_flags=()
@@ -28,39 +29,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-table="release-guard-deployments"
-dynamo="http://localhost:18000"
-host_repo="localhost:5050/release-guard/app"
-cluster_repo="k3d-rg-registry:5000/release-guard/app"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-releasectl() { dotnet run --project "$repo_root/src/Release.Cli" --no-build -- "$@"; }
 
 echo "release: building $commit from $source_dir"
-docker build --quiet -f "$source_dir/src/Orders.Api/Dockerfile" -t "$host_repo:${commit:0:12}" "$source_dir" >/dev/null
-docker push --quiet "$host_repo:${commit:0:12}" >/dev/null
-digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$host_repo:${commit:0:12}" \
-  | grep "^$host_repo@" | head -1 | sed 's/.*@//')"
-echo "release: pushed $cluster_repo@$digest"
-
-# Scan the pushed digest itself, so scanned bytes and promoted bytes are the same.
-trivy image --quiet --image-src remote --insecure --scanners vuln --severity HIGH,CRITICAL \
-  --ignore-unfixed --format json --output "$work/trivy.json" "$host_repo@$digest"
-echo "release: scanned, $(jq '[.Results[]?.Vulnerabilities[]?] | length' "$work/trivy.json") fixable high or critical findings"
+digest="$(build_image "$source_dir" "${commit:0:12}" "$work/trivy.json")"
+echo "release: pushed $cluster_repo@$digest, $(jq '[.Results[]?.Vulnerabilities[]?] | length' "$work/trivy.json") fixable high or critical findings"
 
 if [[ -n "$override_reason" ]]; then
-  releasectl override --table "$table" --dynamo-endpoint "$dynamo" \
-    --digest "$digest" --reason "$override_reason" --hours 1
+  releasectl override --table "$table" --dynamo-endpoint "$dynamo" --digest "$digest" --reason "$override_reason" --hours 1
 fi
 
 set +e
-releasectl promote \
-  --table "$table" --dynamo-endpoint "$dynamo" \
-  --deploy-repo localhost:5050/release-guard/deploy --provider generic --insecure-registry \
-  --template "$repo_root/deploy/release" \
-  --commit "$commit" --image-repo "$cluster_repo" --image-digest "$digest" \
-  --scan-report "$work/trivy.json" --scanned-digest "$digest" \
-  ${promote_flags[@]+"${promote_flags[@]}"} | tee "$work/promote.json"
+promote "$commit" "$digest" "$work/trivy.json" ${promote_flags[@]+"${promote_flags[@]}"} | tee "$work/promote.json"
 status=${PIPESTATUS[0]}
 set -e
 if [[ $status -ne 0 ]]; then

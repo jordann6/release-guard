@@ -1,0 +1,36 @@
+name: Release tools
+description: Installs pinned, checksum-verified Trivy, Syft and Flux CLIs plus the .NET SDK and builds releasectl.
+inputs:
+  tools:
+    description: Space-separated subset of "trivy syft flux".
+    default: trivy syft flux
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+    - name: Build releasectl
+      shell: bash
+      run: |
+        dotnet publish src/Release.Cli --configuration Release --output "$RUNNER_TEMP/releasectl" -p:UseAppHost=true
+        echo "$RUNNER_TEMP/releasectl" >> "$GITHUB_PATH"
+    - name: Install CLIs (pinned versions, verified checksums)
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        set -euo pipefail
+        install() { # name url sha256
+          curl -sSfL -o "$RUNNER_TEMP/$1.tgz" "$2"
+          echo "$3  $RUNNER_TEMP/$1.tgz" | sha256sum --check --strict
+          sudo tar -xzf "$RUNNER_TEMP/$1.tgz" -C /usr/local/bin "$1"
+        }
+        for tool in $TOOLS; do
+          case "$tool" in
+            trivy) install trivy https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_Linux-64bit.tar.gz e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7 ;;
+            syft)  install syft https://github.com/anchore/syft/releases/download/v1.54.1/syft_1.54.1_linux_amd64.tar.gz c069905b391cc4c20a5ba65ad5c10be2a7ba074f8ea6ad203e24d14e303dad47 ;;
+            flux)  install flux https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_amd64.tar.gz b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5 ;;
+            *) echo "unknown tool $tool" >&2; exit 1 ;;
+          esac
+        done

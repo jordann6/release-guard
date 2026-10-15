@@ -1,0 +1,257 @@
+name: Release
+
+# Main release pipeline (ADR-0001). Tests do not run again: the evidence gate proves
+# this exact tree already passed them (ADR-0002). The production image is rebuilt, so
+# it is scanned again, and the scanned archive is what gets pushed, byte for byte.
+# Credentials appear only in publish and promote, each with its own role (ADR-0004).
+# Those jobs run only when the repository variable DELIVERY_ENABLED is "true", which
+# the operator sets once the AWS delivery layer exists; before that, every merge still
+# proves its evidence and builds and scans the production image.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  CI: "true"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  CONTRACT_PARAMETER: /delivery/release-guard/prod/contract
+
+jobs:
+  evidence-gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.gate.outputs.pr_number }}
+      tree: ${{ steps.gate.outputs.tree }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: ""
+      - id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: releasectl evidence-gate --sha "$GITHUB_SHA" --out accepted-evidence.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: accepted-evidence
+          path: accepted-evidence.json
+          retention-days: 90
+
+  build-scan:
+    needs: evidence-gate
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      sbom_sha256: ${{ steps.sbom.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: trivy syft
+      - name: Build the production image as an OCI archive
+        id: build
+        run: |
+          docker buildx build --platform linux/amd64 --file src/Orders.Api/Dockerfile \
+            --provenance=false --sbom=false \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --output type=oci,dest=image.tar --metadata-file build.json .
+          digest="$(jq -r '."containerimage.digest"' build.json)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Image digest: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Scan the archive (blocking)
+        run: |
+          trivy image --quiet --input image.tar --scanners vuln --severity HIGH,CRITICAL \
+            --ignore-unfixed --exit-code 1 --format json --output trivy.json
+          trivy convert --format table trivy.json
+      - name: SBOM
+        id: sbom
+        run: |
+          syft scan oci-archive:image.tar --output cyclonedx-json=sbom.cdx.json
+          echo "sha256=$(sha256sum sbom.cdx.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: image.tar
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: scan-and-sbom
+          path: |
+            trivy.json
+            sbom.cdx.json
+            build.json
+          retention-days: 90
+
+  publish:
+    needs: [evidence-gate, build-scan]
+    if: vars.DELIVERY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment: publish
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      image_repo: ${{ steps.contract.outputs.app_repository_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: ""
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: contract
+        run: releasectl contract-check --source "ssm:$CONTRACT_PARAMETER" --stage publish --region "$AWS_REGION"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: image
+      - name: Push the scanned archive unchanged
+        env:
+          REPO: ${{ steps.contract.outputs.app_repository_url }}
+          DIGEST: ${{ needs.build-scan.outputs.digest }}
+        run: |
+          registry="${REPO%%/*}"
+          aws ecr get-login-password | skopeo login --username AWS --password-stdin "$registry"
+          skopeo copy --preserve-digests "oci-archive:image.tar" "docker://$REPO:$GITHUB_SHA"
+          pushed="$(aws ecr describe-images --repository-name "${REPO#*/}" --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          if [ "$pushed" != "$DIGEST" ]; then
+            echo "::error::Pushed digest $pushed differs from the scanned digest $DIGEST"
+            exit 1
+          fi
+          echo "Published \`$REPO@$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: scan-and-sbom
+      - uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ steps.contract.outputs.app_repository_url }}
+          subject-digest: ${{ needs.build-scan.outputs.digest }}
+      - uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ steps.contract.outputs.app_repository_url }}
+          subject-digest: ${{ needs.build-scan.outputs.digest }}
+          sbom-path: sbom.cdx.json
+
+  promote:
+    needs: [evidence-gate, build-scan, publish]
+    if: vars.DELIVERY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    outputs:
+      seq: ${{ steps.promote.outputs.seq }}
+      outcome: ${{ steps.promote.outputs.outcome }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: flux
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PROMOTE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: contract
+        run: releasectl contract-check --source "ssm:$CONTRACT_PARAMETER" --stage promote --region "$AWS_REGION"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: scan-and-sbom
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: accepted-evidence
+      # Takes the lock and records the release before publishing its artifact (ADR-0006).
+      - id: promote
+        env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+          DEPLOY_REPO: ${{ steps.contract.outputs.deploy_repository_url }}
+          IMAGE_REPO: ${{ steps.contract.outputs.app_repository_url }}
+          DIGEST: ${{ needs.build-scan.outputs.digest }}
+          SBOM_SHA256: ${{ needs.build-scan.outputs.sbom_sha256 }}
+        run: |
+          releasectl promote --table "$TABLE" --region "$AWS_REGION" \
+            --deploy-repo "$DEPLOY_REPO" --provider aws \
+            --commit "$GITHUB_SHA" --image-repo "$IMAGE_REPO" --image-digest "$DIGEST" \
+            --scan-report trivy.json --scanned-digest "$DIGEST" \
+            --sbom-digest "sha256:$SBOM_SHA256" --pr-evidence accepted-evidence.json
+      # Publishing manifests is not a deployment; only the in-cluster verifier's verdict is.
+      - name: Wait for the verifier
+        if: steps.promote.outputs.outcome == 'Started' || steps.promote.outputs.outcome == 'Resumed'
+        env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+          SEQ: ${{ steps.promote.outputs.seq }}
+        run: releasectl wait --table "$TABLE" --region "$AWS_REGION" --seq "$SEQ" --timeout 00:12:00
+      - name: Record the release state
+        if: always() && steps.contract.outcome == 'success'
+        env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+        run: releasectl status --table "$TABLE" --region "$AWS_REGION" | tee release-status.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: release-status
+          path: release-status.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # Release evidence (ADR-0007), recorded whether the verdict passed or failed.
+  record:
+    needs: [evidence-gate, build-scan, publish, promote]
+    if: always() && needs.promote.outputs.seq != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: "{accepted-evidence,scan-and-sbom,release-status}"
+          merge-multiple: true
+      - name: Publish release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEQ: ${{ needs.promote.outputs.seq }}
+          RESULT: ${{ needs.promote.result }}
+          IMAGE_REPO: ${{ needs.publish.outputs.image_repo }}
+          DIGEST: ${{ needs.build-scan.outputs.digest }}
+        run: |
+          jq -n --slurpfile status release-status.json --slurpfile evidence accepted-evidence.json \
+            --arg commit "$GITHUB_SHA" --arg image "$IMAGE_REPO@$DIGEST" \
+            --arg trivy "$(sha256sum trivy.json | cut -d' ' -f1)" --arg sbom "$(sha256sum sbom.cdx.json | cut -d' ' -f1)" \
+            '{commit: $commit, image: $image, trivy_report_sha256: $trivy, sbom_sha256: $sbom, pr_evidence: $evidence[0], release: $status[0]}' \
+            > "release-evidence-$SEQ.json"
+          verdict="$(jq -r '.release.verdict.result // "none"' "release-evidence-$SEQ.json")"
+          gh release create "r$SEQ" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Release $SEQ ($verdict)" \
+            --notes "Image \`$IMAGE_REPO@$DIGEST\`. Verifier verdict: **$verdict**. Promote job: $RESULT. Verify provenance with \`gh attestation verify oci://$IMAGE_REPO@$DIGEST --repo $GITHUB_REPOSITORY\`." \
+            "release-evidence-$SEQ.json" trivy.json sbom.cdx.json accepted-evidence.json

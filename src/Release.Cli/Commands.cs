@@ -51,6 +51,7 @@ internal static class Commands
     private static readonly Option<bool> InsecureRegistry = new("--insecure-registry") { Description = "Plain HTTP registry (local only)." };
     private static readonly Option<string> WorkDir = new("--work-dir") { DefaultValueFactory = _ => Path.Combine(Path.GetTempPath(), "releasectl") };
     private static readonly Option<string> RunUrl = new("--run-url") { DefaultValueFactory = _ => DefaultRunUrl() };
+    private static readonly Option<TimeSpan> Lease = new("--lease") { Description = "How long the release holds the lock before a missing verdict counts as a timeout.", DefaultValueFactory = _ => new GuardOptions().Lease };
 
     public static IEnumerable<Command> All() =>
     [
@@ -188,7 +189,7 @@ internal static class Commands
         var useOverride = new Option<bool>("--override") { Description = "Consume the approved override for this digest." };
         var command = new Command("promote", "Start a release under the deployment guard and publish its artifact (ADR-0006).")
         {
-            Env, Table, DynamoEndpoint, Region, DeployRepo, Template, SourceUrl, Provider, InsecureRegistry, WorkDir, RunUrl,
+            Env, Table, DynamoEndpoint, Region, DeployRepo, Template, SourceUrl, Provider, InsecureRegistry, WorkDir, RunUrl, Lease,
             commit, imageRepo, imageDigest, scanReport, scannedDigest, sbomDigest, prEvidence, initialize, useOverride,
         };
         command.SetAction(async (parse, ct) =>
@@ -246,7 +247,7 @@ internal static class Commands
     {
         var command = new Command("rollback", "Restore the last verified release as a new, higher release.")
         {
-            Env, Table, DynamoEndpoint, Region, DeployRepo, Template, SourceUrl, Provider, InsecureRegistry, WorkDir, RunUrl,
+            Env, Table, DynamoEndpoint, Region, DeployRepo, Template, SourceUrl, Provider, InsecureRegistry, WorkDir, RunUrl, Lease,
         };
         command.SetAction(async (parse, ct) =>
         {
@@ -350,7 +351,7 @@ internal static class Commands
     private static ReleasePipeline Pipeline(ParseResult parse, IAmazonDynamoDB dynamo)
     {
         var store = new DynamoDeploymentStore(dynamo, parse.GetValue(Table)!);
-        var guard = new DeploymentGuard(store, TimeProvider.System, new GuardOptions());
+        var guard = new DeploymentGuard(store, TimeProvider.System, new GuardOptions { Lease = parse.GetValue(Lease) });
         var publisher = new FluxCliArtifactPublisher(new FluxCliOptions
         {
             Repository = parse.GetValue(DeployRepo)!,

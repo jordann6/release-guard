@@ -45,7 +45,9 @@ Uploading a report never counts as passing. Every scanner exits non-zero on a fi
 | `publish` | environment `publish`, OIDC role `release-guard-publish` | Validates the deployment contract, pushes the scanned image to the application ECR repository tagged with the commit SHA, attests provenance and SBOM. |
 | `promote` | environment `production`, OIDC role `release-guard-promote` | Runs `releasectl promote`, then `releasectl wait` until the in-cluster verifier records a verdict (ADR-0006). |
 
-The image that `publish` pushes is the exact image `build-scan` scanned. `build-scan` exports it with `docker save` as a job artifact, and `publish` loads it and checks that the digest matches before pushing.
+The image that `publish` pushes is the exact image `build-scan` scanned. `build-scan` builds an OCI archive whose manifest digest is known at build time and scans that archive. `publish` pushes the archive with `skopeo copy --preserve-digests` and fails if ECR reports a different digest.
+
+`publish`, `promote` and the evidence record run only when the repository variable `DELIVERY_ENABLED` is `true`, which the operator sets once the AWS delivery layer exists. Until then every merge still runs the evidence gate and builds and scans the production image.
 
 ### What does not run on main
 

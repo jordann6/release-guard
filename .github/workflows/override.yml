@@ -1,0 +1,115 @@
+name: Override
+
+# Audited exception (ADR-0006). The grant job runs in the production-override
+# environment, which needs an approval from the repository owner; the approval is
+# recorded against this run, and the grant names one image digest, a reason and an
+# expiry. An override lifts only the failed-rollout block: the image must already be
+# published, and it is scanned again here and must pass. A PR label can request an
+# override but cannot authorize one.
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: Digest of an image already published to the application repository (sha256:...).
+        required: true
+      reason:
+        description: Why this release may bypass the failed-rollout block (at least 20 characters).
+        required: true
+      expires_in_hours:
+        description: Hours until the grant expires (at most 24).
+        required: true
+        default: "4"
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  CONTRACT_PARAMETER: /delivery/release-guard/prod/contract
+
+jobs:
+  grant:
+    runs-on: ubuntu-24.04
+    environment: production-override
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: ""
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PROMOTE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: contract
+        run: releasectl contract-check --source "ssm:$CONTRACT_PARAMETER" --stage promote --region "$AWS_REGION"
+      - env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+          DIGEST: ${{ inputs.image_digest }}
+          REASON: ${{ inputs.reason }}
+          HOURS: ${{ inputs.expires_in_hours }}
+        run: releasectl override --table "$TABLE" --region "$AWS_REGION" --digest "$DIGEST" --reason "$REASON" --hours "$HOURS"
+
+  promote:
+    needs: grant
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/release-tools
+        with:
+          tools: trivy flux
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.PROMOTE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: contract
+        run: releasectl contract-check --source "ssm:$CONTRACT_PARAMETER" --stage promote --region "$AWS_REGION"
+      - name: Find the published image and scan it again
+        id: image
+        env:
+          REPO: ${{ steps.contract.outputs.app_repository_url }}
+          DIGEST: ${{ inputs.image_digest }}
+        run: |
+          # Images are tagged with their source commit when published.
+          commit="$(aws ecr describe-images --repository-name "${REPO#*/}" --image-ids imageDigest="$DIGEST" \
+            --query 'imageDetails[0].imageTags[0]' --output text)"
+          if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::$DIGEST is not a published release image"
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO%%/*}"
+          trivy image --quiet --image-src remote --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --format json --output trivy.json "$REPO@$DIGEST"
+      - id: promote
+        env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+          DEPLOY_REPO: ${{ steps.contract.outputs.deploy_repository_url }}
+          IMAGE_REPO: ${{ steps.contract.outputs.app_repository_url }}
+          DIGEST: ${{ inputs.image_digest }}
+          COMMIT: ${{ steps.image.outputs.commit }}
+        run: |
+          releasectl promote --table "$TABLE" --region "$AWS_REGION" --deploy-repo "$DEPLOY_REPO" --provider aws \
+            --commit "$COMMIT" --image-repo "$IMAGE_REPO" --image-digest "$DIGEST" \
+            --scan-report trivy.json --scanned-digest "$DIGEST" --override
+      - name: Wait for the verifier
+        env:
+          TABLE: ${{ steps.contract.outputs.deployment_table }}
+          SEQ: ${{ steps.promote.outputs.seq }}
+        run: releasectl wait --table "$TABLE" --region "$AWS_REGION" --seq "$SEQ" --timeout 00:12:00
