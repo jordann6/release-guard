@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.github/
+docs/
+deploy/
+scripts/
+tests/
+**/*.md
+**/.DS_Store
+**/appsettings.Development.json

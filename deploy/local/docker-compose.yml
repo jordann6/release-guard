@@ -1,0 +1,58 @@
+# Local stack: PostgreSQL with the production role model, the migration step, the API
+# and an OpenTelemetry collector. Mirrors the EKS shape (ADR-0003, ADR-0004) without AWS.
+#
+#   ORDERS_MIGRATOR_PASSWORD=$(openssl rand -hex 16) ORDERS_APP_PASSWORD=$(openssl rand -hex 16) \
+#     docker compose -f deploy/local/docker-compose.yml up --build -d
+name: release-guard
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp]
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-admin-only}
+      ORDERS_MIGRATOR_PASSWORD: ${ORDERS_MIGRATOR_PASSWORD:?set ORDERS_MIGRATOR_PASSWORD}
+      ORDERS_APP_PASSWORD: ${ORDERS_APP_PASSWORD:?set ORDERS_APP_PASSWORD}
+    volumes:
+      - ../../scripts/db:/bootstrap:ro
+      - ./init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "orders"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    <<: *hardening
+    build: { context: ../.., dockerfile: src/Orders.Api/Dockerfile }
+    image: release-guard/orders-api:local
+    command: ["migrate"]
+    environment:
+      Database__ConnectionString: Host=postgres;Database=orders;Username=orders_migrator;Password=${ORDERS_MIGRATOR_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *hardening
+    image: release-guard/orders-api:local
+    environment:
+      Database__ConnectionString: Host=postgres;Database=orders;Username=orders_app;Password=${ORDERS_APP_PASSWORD}
+      Release__Version: local
+      Release__Commit: ${RELEASE_COMMIT:-uncommitted}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_METRIC_EXPORT_INTERVAL: "5000"
+    ports: ["127.0.0.1:${API_PORT:-18080}:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      otel-collector: { condition: service_started }
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.137.0@sha256:886722fe0f37af9d1fe24d29529253ec59fbf263b3b1df4facaf221373e19d23
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
