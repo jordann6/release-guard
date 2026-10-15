@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pr-evidence.schema.json",
+  "title": "PR check evidence",
+  "description": "Written by the final job of pr.yml (or by verify-main.yml) and checked by the release evidence gate. See ADR-0002.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "head_sha", "merge_tree", "jobs", "image"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source": { "enum": ["pull_request", "verify-main"] },
+    "pr_number": { "type": "integer", "minimum": 1 },
+    "head_sha": { "$ref": "#/$defs/sha" },
+    "base_sha": { "$ref": "#/$defs/sha" },
+    "merge_ref_sha": { "$ref": "#/$defs/sha" },
+    "merge_tree": { "$ref": "#/$defs/sha" },
+    "run_id": { "type": "integer" },
+    "run_attempt": { "type": "integer" },
+    "jobs": {
+      "type": "object",
+      "description": "Conclusion of every required job, keyed by job id.",
+      "minProperties": 1,
+      "additionalProperties": { "enum": ["success", "failure", "cancelled", "skipped"] }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "trivy_result", "trivy_report_sha256"],
+      "properties": {
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "trivy_result": { "enum": ["pass", "fail"] },
+        "trivy_report_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "high": { "type": "integer", "minimum": 0 },
+        "critical": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "source": { "const": "pull_request" } } },
+      "then": { "required": ["pr_number", "base_sha", "merge_ref_sha"] }
+    }
+  ],
+  "$defs": {
+    "sha": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+  }
+}

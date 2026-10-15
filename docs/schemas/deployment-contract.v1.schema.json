@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "deployment-contract.v1.schema.json",
+  "title": "Deployment contract v1",
+  "description": "Allowlisted infrastructure outputs published to SSM after a successful delivery apply. See ADR-0005.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "generation_id",
+    "region",
+    "cluster_name",
+    "namespace",
+    "app_repository_url",
+    "deploy_repository_url",
+    "publish_role_arn",
+    "promote_role_arn",
+    "app_role_arn",
+    "migrator_role_arn",
+    "verifier_role_arn",
+    "flux_source_role_arn",
+    "deployment_table",
+    "source_commit",
+    "published_at"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^1(\\.[0-9]+)?$" },
+    "generation_id": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
+    "region": { "type": "string", "pattern": "^[a-z]{2}-[a-z]+-[0-9]$" },
+    "cluster_name": { "type": "string", "minLength": 1 },
+    "namespace": { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "app_repository_url": { "$ref": "#/$defs/ecrRepositoryUrl" },
+    "deploy_repository_url": { "$ref": "#/$defs/ecrRepositoryUrl" },
+    "publish_role_arn": { "$ref": "#/$defs/roleArn" },
+    "promote_role_arn": { "$ref": "#/$defs/roleArn" },
+    "app_role_arn": { "$ref": "#/$defs/roleArn" },
+    "migrator_role_arn": { "$ref": "#/$defs/roleArn" },
+    "verifier_role_arn": { "$ref": "#/$defs/roleArn" },
+    "flux_source_role_arn": { "$ref": "#/$defs/roleArn" },
+    "deployment_table": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{3,255}$" },
+    "source_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "published_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "ecrRepositoryUrl": {
+      "type": "string",
+      "pattern": "^[0-9]{12}\\.dkr\\.ecr\\.[a-z0-9-]+\\.amazonaws\\.com/[a-z0-9._/-]+$"
+    },
+    "roleArn": {
+      "type": "string",
+      "pattern": "^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$"
+    }
+  }
+}
