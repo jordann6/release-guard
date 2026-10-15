@@ -85,9 +85,10 @@ jobs:
           digest="$(jq -r '."containerimage.digest"' build.json)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "Image digest: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"
-      - name: Scan the archive (blocking)
+      - name: Scan the extracted OCI layout (blocking)
         run: |
-          trivy image --quiet --input image.tar --scanners vuln --severity HIGH,CRITICAL \
+          mkdir -p oci-layout && tar -xf image.tar -C oci-layout
+          trivy image --quiet --input oci-layout --scanners vuln --severity HIGH,CRITICAL \
             --ignore-unfixed --exit-code 1 --format json --output trivy.json
           trivy convert --format table trivy.json
       - name: SBOM
