@@ -2,7 +2,20 @@
 
 An order-processing API in C# on .NET 10, and the delivery machinery that proves each release healthy on EKS before the next one may follow.
 
-Status: Phase 2 of 6. The application runs and is tested locally. The PR pipeline, release tooling and EKS delivery come next. Design decisions are in [docs/adr](docs/adr).
+Status: Phase 3 of 6. The application and its PR gates are live. Release tooling and EKS delivery come next. Design decisions are in [docs/adr](docs/adr).
+
+## Merge gates (proven)
+
+`main` accepts squash merges from PRs only, with an empty bypass list, so the owner cannot push to it directly either. Every PR runs ten required checks with no AWS access ([ADR-0001](docs/adr/0001-trigger-model.md)). Each gate was proven by a PR that had to be blocked:
+
+| PR | Change | Blocked by |
+|---|---|---|
+| [#2](https://github.com/jordann6/release-guard/pull/2) | Shipped orders made cancellable | `unit-tests`, `integration-tests` |
+| [#3](https://github.com/jordann6/release-guard/pull/3) | SQL built from a query parameter, EF Core analyzer suppressed | `sast`: CodeQL `cs/sql-injection`, severity 8.8 |
+| [#4](https://github.com/jordann6/release-guard/pull/4) | Runtime image pinned back to .NET 10.0.0 | `image-scan`: Trivy, fixable critical and high CVEs |
+| [#5](https://github.com/jordann6/release-guard/pull/5) | Column rename, consistent within the branch | `migration-safety` and `n-minus-1`: the release on main still reads the old column |
+
+A direct push to `main` from the owner account was rejected (`GH013`). [#1](https://github.com/jordann6/release-guard/pull/1) merged after all ten checks passed, and its squash commit has the same tree hash as the tree the checks ran on, which is the property the release evidence gate relies on ([ADR-0002](docs/adr/0002-main-protection-and-evidence.md)).
 
 ## The service
 
