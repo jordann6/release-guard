@@ -2,7 +2,23 @@
 
 An order-processing API in C# on .NET 10, and the delivery machinery that proves each release healthy on EKS before the next one may follow.
 
-Status: Phase 4 of 6. The application, its PR gates and the release tooling are built. Every release and recovery path is proven on a local cluster ([results](docs/local-scenarios.md)). The AWS demo comes next ([runbook](docs/runbook-aws.md)). Design decisions are in [docs/adr](docs/adr).
+Status: Phase 5 of 6. The application, its PR gates and the release tooling are built. Every release and recovery path is proven on a local cluster ([results](docs/local-scenarios.md)). The stack was deployed to AWS on 2026-10-15, delivered a verified release to EKS, and was destroyed the same day ([runbook](docs/runbook-aws.md)). Design decisions are in [docs/adr](docs/adr).
+
+![release-guard architecture](docs/architecture.png)
+
+## On AWS (2026-10-15)
+
+The first two releases on EKS failed for reasons the local cluster could not reproduce, and both were caught by the verifier rather than by a user:
+
+| Release | Outcome | Cause | Fix |
+|---|---|---|---|
+| seq 1 | Failed | The migrate Kustomization's `nameSuffix` renamed its ServiceAccount, so the IRSA trust refused it | [#13](https://github.com/jordann6/release-guard/pull/13) |
+| seq 2 | Failed | The CloudWatch observability add-on injected OpenTelemetry init containers that the `restricted` PodSecurity profile rejects | [#14](https://github.com/jordann6/release-guard/pull/14) |
+| seq 3 | Healthy, verifier Pass | Promoted through the audited override after the failures blocked normal promotion | [override run](https://github.com/jordann6/release-guard/actions/runs/38768100113) |
+
+A failed release with no healthy predecessor blocks both promote and initialize, which is the design working: the only way forward was an approved, expiring override recorded against the image digest. [#10](https://github.com/jordann6/release-guard/pull/10) is kept open as evidence of the image-scan gate refusing a vulnerable image.
+
+Not exercised on AWS: a normal release after recovery, `rollback.yml`, and the deliberate failed-rollout and blocked-promotion demos. Those paths are covered by the [local scenarios](docs/local-scenarios.md).
 
 ## Merge gates (proven)
 
