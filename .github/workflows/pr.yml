@@ -1,0 +1,29 @@
+name: PR
+
+# Merge gates for every pull request (ADR-0001). No AWS credentials and no
+# id-token permission anywhere in this workflow or the ones it calls.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      source: pull_request
+      base_sha: ${{ github.event.pull_request.base.sha }}
+      head_sha: ${{ github.event.pull_request.head.sha }}
+      pr_number: ${{ format('{0}', github.event.pull_request.number) }}
+      contract_migration_approved: ${{ contains(github.event.pull_request.labels.*.name, 'contract-migration') }}

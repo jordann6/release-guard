@@ -4,6 +4,8 @@ obj/
 .vs/
 .idea/
 TestResults/
+__pycache__/
+*.pyc
 artifacts/
 .DS_Store
 .env

@@ -1,0 +1,39 @@
+# Local gates. These run before a commit exists, which is the only point where
+# a secret is still cheap to remove. CI re-runs the same checks because local
+# hooks can be skipped with --no-verify.
+#
+# Install:  pre-commit install && pre-commit install --hook-type pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # No Terraform here (its infrastructure lives in aws-landing-zone), so the
+  # installer's Terraform hooks are replaced by the .NET formatter.
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format (verify)
+        entry: dotnet format --verify-no-changes
+        language: system
+        pass_filenames: false
+        files: \.(cs|csproj|props|editorconfig)$
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck

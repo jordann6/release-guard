@@ -1,0 +1,23 @@
+# Pinned inputs change only through reviewed PRs that pass the full pipeline (ADR-0007).
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dotnet:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /src/Orders.Api
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

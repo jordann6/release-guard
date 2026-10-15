@@ -1,0 +1,48 @@
+name: Verify main
+
+# Recovery path when a main commit has no matching PR evidence (ADR-0002): runs the
+# full PR suite against the main commit itself and uploads evidence keyed to its
+# tree. Rerun the release afterwards. Nothing else can mark evidence as present.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-main-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  # The publish environment only allows main, so this fails on any other branch.
+  main-only:
+    runs-on: ubuntu-24.04
+    environment: publish
+    steps:
+      - run: echo "Verifying ${GITHUB_SHA} on ${GITHUB_REF}"
+
+  previous:
+    needs: main-only
+    runs-on: ubuntu-24.04
+    outputs:
+      base_sha: ${{ steps.parent.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      # Squash-only history: the first parent is the previous release.
+      - id: parent
+        run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: previous
+    uses: ./.github/workflows/checks.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      source: verify-main
+      base_sha: ${{ needs.previous.outputs.base_sha }}
+      head_sha: ${{ github.sha }}
