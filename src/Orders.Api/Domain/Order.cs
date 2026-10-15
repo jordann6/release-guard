@@ -19,7 +19,7 @@ public sealed class Order
         {
             [OrderStatus.Received] = [OrderStatus.Confirmed, OrderStatus.Cancelled],
             [OrderStatus.Confirmed] = [OrderStatus.Shipped, OrderStatus.Cancelled],
-            [OrderStatus.Shipped] = [OrderStatus.Delivered],
+            [OrderStatus.Shipped] = [OrderStatus.Delivered, OrderStatus.Cancelled],
             [OrderStatus.Delivered] = [],
             [OrderStatus.Cancelled] = [],
         }.ToFrozenDictionary();
