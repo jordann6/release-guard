@@ -21,8 +21,14 @@ $$;
 GRANT CONNECT ON DATABASE orders TO orders_migrator, orders_app;
 
 -- The migrator owns the schema, so EF's CREATE SCHEMA IF NOT EXISTS is a no-op and
--- nothing needs rights on the public schema.
+-- nothing needs rights on the public schema. PostgreSQL 16 requires explicit
+-- membership before the RDS master can create an object as another role.
+GRANT CREATE ON DATABASE orders TO orders_migrator;
+GRANT orders_migrator TO appadmin;
+SET ROLE orders_migrator;
 CREATE SCHEMA IF NOT EXISTS orders AUTHORIZATION orders_migrator;
+RESET ROLE;
+REVOKE CREATE ON DATABASE orders FROM orders_migrator;
 REVOKE ALL ON SCHEMA public FROM orders_app;
 GRANT USAGE ON SCHEMA orders TO orders_app;
 
@@ -32,3 +38,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE orders_migrator IN SCHEMA orders
     GRANT SELECT, INSERT, UPDATE ON TABLES TO orders_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE orders_migrator IN SCHEMA orders
     GRANT USAGE, SELECT ON SEQUENCES TO orders_app;
+REVOKE orders_migrator FROM appadmin;
