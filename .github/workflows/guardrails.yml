@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   ci:
-    uses: jordann6/platform-guardrails/.github/workflows/ci.yml@f3ac73cfd5dcc2d13491b6997c4796b1eb1c8656 # v1.4.0
+    uses: jordann6/platform-guardrails/.github/workflows/ci.yml@922465f21b8d0bd3f18486e64db68d1e404883ca # v1.5.0
     permissions:
       contents: read
       security-events: write
