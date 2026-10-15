@@ -29,7 +29,9 @@ trap cleanup EXIT
 if [[ -d "$1" ]]; then
   previous="$(cd "$1" && pwd)"
 else
-  worktree="$(mktemp -d)/previous"
+  # Physical path: on macOS mktemp returns /var/..., a symlink to /private/var/...,
+  # which breaks project reference resolution in the worktree.
+  worktree="$(cd "$(mktemp -d)" && pwd -P)/previous"
   git -C "$repo_root" worktree add --detach "$worktree" "$1" >/dev/null
   previous="$worktree"
 fi
@@ -42,11 +44,20 @@ fi
 echo "n-minus-1: starting PostgreSQL"
 container="$(docker run -d -e POSTGRES_PASSWORD="$password" -p 127.0.0.1::5432 "$image")"
 port="$(docker port "$container" 5432/tcp | head -1 | sed 's/.*://')"
+# Probe over TCP, not the Unix socket: on first start the image runs a temporary
+# socket-only server for initialization, then restarts. A socket probe can pass
+# against that temporary server and race the restart.
+ready=0
 for _ in $(seq 1 60); do
-  if docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+  if docker exec "$container" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done
-docker exec "$container" psql -U postgres -q -c "CREATE DATABASE $database" >/dev/null
+if [[ $ready -ne 1 ]]; then
+  echo "n-minus-1: PostgreSQL did not become ready" >&2
+  docker logs "$container" >&2 || true
+  exit 1
+fi
+docker exec "$container" psql -h 127.0.0.1 -U postgres -q -c "CREATE DATABASE $database" >/dev/null
 
 admin="Host=127.0.0.1;Port=$port;Username=postgres;Password=$password"
 target="$admin;Database=$database"
@@ -56,7 +67,7 @@ Database__ConnectionString="$target" \
   dotnet run --project "$repo_root/src/Orders.Api" -c Release -- migrate
 
 echo "n-minus-1: current schema:"
-docker exec "$container" psql -U postgres -d "$database" -At \
+docker exec "$container" psql -h 127.0.0.1 -U postgres -d "$database" -At \
   -c "SELECT migration_id FROM orders.__ef_migrations_history ORDER BY 1" | sed 's/^/  /'
 
 echo "n-minus-1: running previous release's integration tests against it"
