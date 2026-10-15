@@ -1,0 +1,55 @@
+# Flux applies releases as orders-reconciler, which can manage only the release
+# object kinds and only in the orders namespace (ADR-0004). kustomize-controller
+# runs with --no-cross-namespace-refs and --default-service-account=flux-restricted,
+# so a Kustomization without an explicit account gets no permissions at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-reconciler
+  namespace: orders
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flux-restricted
+  namespace: orders
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: orders-reconciler
+  namespace: orders
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts, services, configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Health checks read rollout progress.
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: orders-reconciler
+  namespace: orders
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: orders-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: orders-reconciler
+    namespace: orders

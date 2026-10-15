@@ -2,7 +2,7 @@
 
 An order-processing API in C# on .NET 10, and the delivery machinery that proves each release healthy on EKS before the next one may follow.
 
-Status: Phase 3 of 6. The application and its PR gates are live. Release tooling and EKS delivery come next. Design decisions are in [docs/adr](docs/adr).
+Status: Phase 4 of 6. The application, its PR gates and the release tooling are built. Every release and recovery path is proven on a local cluster ([results](docs/local-scenarios.md)). The AWS demo comes next ([runbook](docs/runbook-aws.md)). Design decisions are in [docs/adr](docs/adr).
 
 ## Merge gates (proven)
 

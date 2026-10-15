@@ -40,7 +40,7 @@ All three use KMS encryption and scan on push. Flux controller images are copied
 
 The channel is kept separate from the immutable image tags:
 
-- Each promotion allocates the next release sequence `N` from DynamoDB with a conditional increment (ADR-0006).
+- Each promotion allocates the next release sequence `N` on the deployment lock with a conditional write (ADR-0006).
 - The rendered artifact is pushed as `<deploy-repo>:1.0.N`. Because the repository is immutable, `1.0.N` can never be rewritten.
 - The Flux `OCIRepository` uses `ref.semver: ">=1.0.0"` and follows the highest version.
 
@@ -48,11 +48,21 @@ The channel is kept separate from the immutable image tags:
 
 ### Flux configuration
 
-- `OCIRepository` `orders-release`: `provider: aws`, interval 1m, `ref.semver: ">=1.0.0"`.
+The Flux objects live in the `orders` namespace, as a Flux tenant, not in `flux-system`. Flux impersonates a Kustomization's service account in the Kustomization's own namespace, and `--no-cross-namespace-refs` forbids pointing at a source in another namespace, so the source, both Kustomizations and the restricted account sit together.
+
+- `OCIRepository` `orders-release`: `provider: aws` (local: `generic` and `insecure`), interval 30s, `ref.semver: ">=1.0.0"`.
 - `Kustomization` `orders-migrate`: path `./migrate`, applies the migration Job. `wait: true`, `timeout: 5m`.
-- `Kustomization` `orders-app`: path `./app`, `dependsOn: orders-migrate`, `wait: true`, `timeout: 5m`, `prune: true`.
+- `Kustomization` `orders-app`: path `./app`, `dependsOn: orders-migrate`, `wait: true`, `timeout: 4m`, `prune: true`.
 - Both run as `serviceAccountName: orders-reconciler`, which is bound to a Role in the `orders` namespace only.
 - kustomize-controller runs with `--no-cross-namespace-refs=true` and `--default-service-account=flux-restricted`, so any Kustomization that omits a service account gets no permissions.
+
+### Environment settings
+
+Releases carry no environment values. Each environment's platform layer provides them:
+
+- The `orders-runtime` ConfigMap holds runtime settings (IAM authentication on or off, region, telemetry endpoint). Containers read it with `envFrom`.
+- The `orders-db` Secret holds connection strings. In AWS these contain no password, because authentication uses IAM tokens.
+- Flux variable substitution, from the `orders-settings` ConfigMap, is used only for the IRSA role ARNs on service accounts. The first local release showed why substitution is kept out of everything else: a substituted `false` becomes a YAML boolean and the API rejects the object.
 
 ### Rollout
 

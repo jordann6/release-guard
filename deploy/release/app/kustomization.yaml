@@ -1,0 +1,12 @@
+# Release template (ADR-0003). releasectl appends the image digest and release
+# annotations; do not set images, nameSuffix or commonAnnotations here.
+# Runtime settings come from the orders-runtime ConfigMap and orders-db Secret,
+# owned by the platform layer. Only role ARNs use Flux substitution (${...}).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: orders
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
