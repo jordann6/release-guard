@@ -82,7 +82,7 @@ namespace Orders.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasColumnName("sku");
+                        .HasColumnName("product_code");
 
                     b.Property<string>("Status")
                         .IsRequired()

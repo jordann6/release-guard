@@ -23,7 +23,7 @@ public sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) :
             order.ToTable("orders");
             order.HasKey(o => o.Id);
             order.Property(o => o.Id).ValueGeneratedNever();
-            order.Property(o => o.Sku).HasMaxLength(Order.MaxSkuLength).IsRequired();
+            order.Property(o => o.Sku).HasColumnName("product_code").HasMaxLength(Order.MaxSkuLength).IsRequired();
             order.Property(o => o.CustomerReference).HasMaxLength(Order.MaxCustomerReferenceLength);
             order.Property(o => o.CancellationReason).HasMaxLength(Order.MaxCancellationReasonLength);
 
