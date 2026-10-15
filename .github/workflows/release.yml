@@ -10,6 +10,14 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual run of the same pipeline for main's head. Used once, for the first
+  # release of a new environment (ADR-0006); the evidence gate still applies.
+  workflow_dispatch:
+    inputs:
+      initialize:
+        description: First release of a new environment (only valid when it has never been deployed).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -199,12 +207,15 @@ jobs:
           IMAGE_REPO: ${{ steps.contract.outputs.app_repository_url }}
           DIGEST: ${{ needs.build-scan.outputs.digest }}
           SBOM_SHA256: ${{ needs.build-scan.outputs.sbom_sha256 }}
+          INITIALIZE: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize }}
         run: |
+          flags=()
+          if [ "$INITIALIZE" = "true" ]; then flags+=(--initialize); fi
           releasectl promote --table "$TABLE" --region "$AWS_REGION" \
             --deploy-repo "$DEPLOY_REPO" --provider aws \
             --commit "$GITHUB_SHA" --image-repo "$IMAGE_REPO" --image-digest "$DIGEST" \
             --scan-report trivy.json --scanned-digest "$DIGEST" \
-            --sbom-digest "sha256:$SBOM_SHA256" --pr-evidence accepted-evidence.json
+            --sbom-digest "sha256:$SBOM_SHA256" --pr-evidence accepted-evidence.json "${flags[@]}"
       # Publishing manifests is not a deployment; only the in-cluster verifier's verdict is.
       - name: Wait for the verifier
         if: steps.promote.outputs.outcome == 'Started' || steps.promote.outputs.outcome == 'Resumed'

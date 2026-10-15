@@ -1,0 +1,54 @@
+# AWS environment overlay. The ${...} values are filled in from the deployment
+# contract and workload outputs by scripts/aws/bootstrap-platform.sh at apply
+# time, so no account identifiers are committed. Applied once per environment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+images:
+  - name: release-verifier
+    newName: ${VERIFIER_REPOSITORY_URL}
+    digest: ${VERIFIER_DIGEST}
+configMapGenerator:
+  # Substitution variables: role ARNs only (ADR-0003).
+  - name: orders-settings
+    namespace: orders
+    literals:
+      - APP_ROLE_ARN=${APP_ROLE_ARN}
+      - MIGRATOR_ROLE_ARN=${MIGRATOR_ROLE_ARN}
+  # Runtime settings: IAM database authentication, no passwords anywhere.
+  - name: orders-runtime
+    namespace: orders
+    literals:
+      - Database__UseIamAuthentication=true
+      - Database__Region=${REGION}
+generatorOptions:
+  disableNameSuffixHash: true
+patches:
+  - target:
+      kind: OCIRepository
+      name: orders-release
+    patch: |
+      - op: replace
+        path: /spec/url
+        value: oci://${DEPLOY_REPOSITORY_URL}
+      - op: replace
+        path: /spec/provider
+        value: aws
+  - target:
+      kind: ServiceAccount
+      name: verifier
+    patch: |
+      - op: replace
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: ${VERIFIER_ROLE_ARN}
+  - target:
+      kind: Deployment
+      name: verifier
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: ${DEPLOYMENT_TABLE}
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: ${REGION}
