@@ -4,7 +4,7 @@ namespace Orders.Api.Endpoints;
 
 public sealed record CreateOrderRequest(string? Sku, int Quantity, string? CustomerReference);
 
-public sealed record TransitionRequest(string? Target);
+public sealed record TransitionRequest(string? Target, string? Reason = null);
 
 public sealed record OrderResponse(
     Guid Id,
@@ -12,6 +12,7 @@ public sealed record OrderResponse(
     int Quantity,
     string? CustomerReference,
     string Status,
+    string? CancellationReason,
     IReadOnlyList<string> AllowedNextStatuses,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt)
@@ -22,6 +23,7 @@ public sealed record OrderResponse(
         order.Quantity,
         order.CustomerReference,
         order.Status.ToString(),
+        order.CancellationReason,
         [.. Order.NextStates(order.Status).Select(s => s.ToString())],
         order.CreatedAt,
         order.UpdatedAt);

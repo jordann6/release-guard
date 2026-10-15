@@ -114,7 +114,15 @@ internal static class OrderEndpoints
             });
         }
 
-        var result = await service.TransitionAsync(id, target, expectedVersion, cancellationToken).ConfigureAwait(false);
+        if (request.Reason is not null && (target != OrderStatus.Cancelled || request.Reason.Length > Order.MaxCancellationReasonLength))
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(request.Reason)] = [$"Only allowed when cancelling, at most {Order.MaxCancellationReasonLength} characters."],
+            });
+        }
+
+        var result = await service.TransitionAsync(id, target, request.Reason, expectedVersion, cancellationToken).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case TransitionOutcome.Applied:

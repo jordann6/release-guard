@@ -25,6 +25,7 @@ public sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) :
             order.Property(o => o.Id).ValueGeneratedNever();
             order.Property(o => o.Sku).HasMaxLength(Order.MaxSkuLength).IsRequired();
             order.Property(o => o.CustomerReference).HasMaxLength(Order.MaxCustomerReferenceLength);
+            order.Property(o => o.CancellationReason).HasMaxLength(Order.MaxCancellationReasonLength);
 
             // Text, not an integer: a new status never changes the meaning of an old row.
             order.Property(o => o.Status).HasConversion<string>().HasMaxLength(32).IsRequired();

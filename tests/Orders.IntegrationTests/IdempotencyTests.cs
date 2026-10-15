@@ -109,6 +109,7 @@ public sealed record OrderDto(
     int Quantity,
     string? CustomerReference,
     string Status,
+    string? CancellationReason,
     string[] AllowedNextStatuses,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

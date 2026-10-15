@@ -87,6 +87,31 @@ public class OrderLifecycleTests
     }
 
     [Fact]
+    public void Cancellation_records_a_trimmed_reason()
+    {
+        var order = OrderIn(OrderStatus.Confirmed);
+        order.TransitionTo(OrderStatus.Cancelled, Now, "  customer request ");
+        Assert.Equal("customer request", order.CancellationReason);
+    }
+
+    [Fact]
+    public void Reason_is_rejected_for_non_cancelling_transitions()
+    {
+        var order = OrderIn(OrderStatus.Received);
+        Assert.Throws<ArgumentException>(() => order.TransitionTo(OrderStatus.Confirmed, Now, "why"));
+        Assert.Equal(OrderStatus.Received, order.Status);
+    }
+
+    [Fact]
+    public void Overlong_cancellation_reason_is_rejected()
+    {
+        var order = OrderIn(OrderStatus.Received);
+        Assert.Throws<ArgumentException>(() =>
+            order.TransitionTo(OrderStatus.Cancelled, Now, new string('r', Order.MaxCancellationReasonLength + 1)));
+        Assert.Equal(OrderStatus.Received, order.Status);
+    }
+
+    [Fact]
     public void Terminal_states_have_no_next_states()
     {
         Assert.Empty(Order.NextStates(OrderStatus.Delivered));
