@@ -1,8 +1,9 @@
 # AWS demo runbook (Phase 5)
 
-Deploy, prove, demo, destroy. Nothing hourly is left running. The operator runs every
-apply and destroy from a reviewed saved plan. Infrastructure lives in
-`~/aws-landing-zone`; this repository only consumes its deployment contract.
+Deploy, prove, demo, destroy. Nothing hourly is left running. Every apply and destroy
+replays a reviewed saved plan, approved by the operator. Infrastructure lives in
+`~/aws-landing-zone` and builds through its gated CI pipeline (aws-landing-zone
+ADR-0004); this repository only consumes its deployment contract.
 
 ## Before starting
 
@@ -38,12 +39,25 @@ export PATH=/private/tmp/rg-cli-shim:$PATH
 
 Every `terraform` command and script in this runbook assumes that PATH.
 
-## 1. Infrastructure (operator applies)
+## 1. Infrastructure (CI applies, operator approves)
 
-Each root reads a gitignored, mode-0600 `phase-c.tfvars.json`. The prepare script writes
-the network file, and with `--workload` (after the network applies) the workload file.
-Write `delivery/phase-c.tfvars.json` by hand with the keys in `delivery/example.tfvars`
-plus `github_repository`.
+aws-landing-zone builds network, workload and delivery in order through `apply.yml`,
+each root behind the `prod-apply` environment, then replans all three and fails if a
+second plan is not empty. Inputs come from upstream remote state, so no var files are
+needed.
+
+```sh
+gh variable set HOURLY_STACK_ENABLED --repo jordann6/aws-landing-zone --body true
+gh workflow run apply.yml --repo jordann6/aws-landing-zone --ref main
+```
+
+Approve each root once its plan job shows the expected changes. The workload apply
+takes about 28 minutes.
+
+Local fallback: each root still accepts a gitignored, mode-0600 `phase-c.tfvars.json`,
+and an explicitly set variable wins over the state-sourced value. The prepare script
+writes the network file, and with `--workload` (after the network applies) the workload
+file.
 
 ```sh
 python3 /Users/jordannelson/aws-landing-zone/scripts/prepare-workload-inputs.py
@@ -57,8 +71,9 @@ terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -var-file=ph
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery apply tfplan
 ```
 
-Publish the deployment contract (ADR-0005) with platform-guardrails, exactly as
-`tf-apply.yml` does after a CI apply:
+The landing-zone CI does not publish the deployment contract (its jobs hold
+management-account credentials and the parameter lives in the prod account), so
+publish it (ADR-0005) as the operator with platform-guardrails:
 
 ```sh
 AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh \
@@ -137,37 +152,50 @@ Two failures the local scenarios cannot reproduce, both fixed in the manifests:
 If a failed first release leaves no healthy release, both promote and initialize are
 blocked. Recover with `override.yml` and an approval in `production-override`.
 
-## 5. Teardown (operator destroys)
+## 5. Teardown (CI destroys, operator approves)
 
-The workload backup vault must have no recovery points:
+The workload backup vault must have no recovery points, and the teardown should finish
+before the 05:00 UTC backup window:
 
 ```sh
 aws backup list-backup-vaults --profile release-guard-prod \
   --query 'BackupVaultList[].[BackupVaultName,NumberOfRecoveryPoints]' --output table
 ```
 
-Keep the account's EBS encryption default by removing it from state before the workload
-destroy.
+The account's EBS encryption default is kept by a `removed` block in the workload root,
+so no state surgery is needed before the destroy.
 
 ```sh
 gh variable set DELIVERY_ENABLED --repo jordann6/release-guard --body false
 AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh --delete /delivery/release-guard/prod/contract
+gh workflow run destroy.yml --repo jordann6/aws-landing-zone --ref main
+```
+
+`destroy.yml` destroys delivery, workload and network in that order, each behind the
+`destroy` environment and followed by the hourly-resource check. Afterwards:
+
+```sh
+gh variable set HOURLY_STACK_ENABLED --repo jordann6/aws-landing-zone --body false
+```
+
+Local fallback, in the same order:
+
+```sh
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery apply destroy.tfplan
-terraform -chdir=/Users/jordannelson/aws-landing-zone/workload state rm aws_ebs_encryption_by_default.this
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload apply destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/network plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/network apply destroy.tfplan
 ```
 
-Review each destroy plan before applying it. Then confirm every root's state is empty
+Review each destroy plan before applying it. Either way, confirm every root's state is empty
 and the hourly guard passes:
 
 ```sh
 for r in delivery workload network; do
   terraform -chdir=/Users/jordannelson/aws-landing-zone/$r state list \
-    | /Users/jordannelson/platform-guardrails-v1.5.0/scripts/hourly-guard.sh && echo "$r clean"
+    | bash <(git -C /Users/jordannelson/platform-guardrails show v1.7.1:scripts/hourly-guard.sh) && echo "$r clean"
 done
 ```
 
