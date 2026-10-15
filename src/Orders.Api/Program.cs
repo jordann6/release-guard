@@ -86,6 +86,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c
 
 app.MapGet("/info", () => serviceInfo).WithTags("Service");
 app.MapOrderEndpoints();
+app.MapSearchEndpoints();
 
 await app.RunAsync();
 return 0;
