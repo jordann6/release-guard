@@ -55,6 +55,22 @@ public sealed class ManifestRendererTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Migrate_service_account_is_never_renamed_by_the_release_suffix()
+    {
+        // The IRSA trust policy accepts exactly system:serviceaccount:orders:orders-migrator
+        // (ADR-0004). A ServiceAccount in the suffixed migrate Kustomization becomes
+        // orders-migrator-<seq> and STS refuses it, so the account belongs to the platform layer.
+        var root = RepositoryRoot();
+        var migrate = Path.Combine(root, "deploy", "release", "migrate");
+        Assert.DoesNotContain("kind: ServiceAccount", string.Join('\n', Directory.GetFiles(migrate).Select(File.ReadAllText)), StringComparison.Ordinal);
+        Assert.Contains("serviceAccountName: orders-migrator", Yaml(Path.Combine(migrate, "job.yaml")), StringComparison.Ordinal);
+
+        var platform = Yaml(Path.Combine(root, "deploy", "platform", "base", "migrator.yaml"));
+        Assert.Contains("name: orders-migrator", platform, StringComparison.Ordinal);
+        Assert.Contains("namespace: orders", platform, StringComparison.Ordinal);
+    }
+
     /// <summary>The file without comment lines.</summary>
     private static string Yaml(string path) =>
         string.Join('\n', File.ReadAllLines(path).Where(l => !l.TrimStart().StartsWith('#')));
