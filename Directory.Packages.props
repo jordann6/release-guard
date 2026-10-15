@@ -20,6 +20,7 @@
     <PackageVersion Include="KubernetesClient" Version="21.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="System.CommandLine" Version="2.0.13" />
 
     <!-- Tests -->
