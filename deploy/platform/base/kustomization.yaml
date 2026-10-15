@@ -7,4 +7,5 @@ resources:
   - namespaces.yaml
   - flux-tenant.yaml
   - flux-delivery.yaml
+  - migrator.yaml
   - verifier.yaml
