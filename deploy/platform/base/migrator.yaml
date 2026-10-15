@@ -1,0 +1,12 @@
+# The migration Job's identity (ADR-0004). It lives in the platform layer, not in
+# the release template: releasectl appends a per-release nameSuffix to the migrate
+# Kustomization, and the IRSA trust policy accepts exactly
+# system:serviceaccount:orders:orders-migrator, so the name must never change.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orders-migrator
+  namespace: orders
+  annotations:
+    eks.amazonaws.com/role-arn: REPLACED-BY-OVERLAY
+automountServiceAccountToken: false

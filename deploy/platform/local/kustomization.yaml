@@ -46,6 +46,13 @@ patches:
         value: 90s
   - target:
       kind: ServiceAccount
+      name: orders-migrator
+    patch: |
+      - op: replace
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: none
+  - target:
+      kind: ServiceAccount
       name: verifier
     patch: |
       - op: replace

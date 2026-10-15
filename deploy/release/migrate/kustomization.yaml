@@ -1,9 +1,10 @@
 # Migration step, applied before the application (orders-app dependsOn
 # orders-migrate). releasectl appends a per-release nameSuffix so each
-# release runs its own Job. Migrations are expand-only (ADR-0003).
+# release runs its own Job. Migrations are expand-only (ADR-0003). The Job's
+# ServiceAccount is in the platform layer (deploy/platform/base/migrator.yaml),
+# because the suffix would rename it and break the IRSA trust subject.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: orders
 resources:
-  - serviceaccount.yaml
   - job.yaml

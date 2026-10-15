@@ -55,6 +55,36 @@ public sealed class ManifestRendererTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Migrate_service_account_is_never_renamed_by_the_release_suffix()
+    {
+        // The IRSA trust policy accepts exactly system:serviceaccount:orders:orders-migrator
+        // (ADR-0004). A ServiceAccount in the suffixed migrate Kustomization becomes
+        // orders-migrator-<seq> and STS refuses it, so the account belongs to the platform layer.
+        var root = RepositoryRoot();
+        var migrate = Path.Combine(root, "deploy", "release", "migrate");
+        Assert.DoesNotContain("kind: ServiceAccount", string.Join('\n', Directory.GetFiles(migrate).Select(File.ReadAllText)), StringComparison.Ordinal);
+        Assert.Contains("serviceAccountName: orders-migrator", Yaml(Path.Combine(migrate, "job.yaml")), StringComparison.Ordinal);
+
+        var platform = Yaml(Path.Combine(root, "deploy", "platform", "base", "migrator.yaml"));
+        Assert.Contains("name: orders-migrator", platform, StringComparison.Ordinal);
+        Assert.Contains("namespace: orders", platform, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("java")]
+    [InlineData("python")]
+    [InlineData("dotnet")]
+    [InlineData("nodejs")]
+    public void App_pods_opt_out_of_addon_auto_instrumentation(string language)
+    {
+        // The EKS observability add-on injects init containers that violate the restricted
+        // PodSecurity profile of the orders namespace, so no pod of the release can start.
+        var deployment = Yaml(Path.Combine(RepositoryRoot(), "deploy", "release", "app", "deployment.yaml"));
+        Assert.Contains($"instrumentation.opentelemetry.io/inject-{language}: \"false\"", deployment, StringComparison.Ordinal);
+        Assert.Contains($"cloudwatch.aws.amazon.com/auto-annotate-{language}: \"false\"", deployment, StringComparison.Ordinal);
+    }
+
     /// <summary>The file without comment lines.</summary>
     private static string Yaml(string path) =>
         string.Join('\n', File.ReadAllLines(path).Where(l => !l.TrimStart().StartsWith('#')));

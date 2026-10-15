@@ -22,16 +22,38 @@ apply and destroy from a reviewed saved plan. Infrastructure lives in
   aws configure set profile.release-guard-prod.region us-east-1
   ```
 
-## 1. Infrastructure (operator applies)
+## Terraform and AWS_PROFILE
+
+The state backend lives in the management account. If `AWS_PROFILE=release-guard-prod`
+is exported, Terraform reads state as the prod account and the S3 backend returns 403.
+Run Terraform, and the scripts below that call `terraform output`, through a wrapper
+that drops the profile while the AWS CLI calls in the scripts keep it:
 
 ```sh
-terraform -chdir=/Users/jordannelson/aws-landing-zone/network plan -out tfplan
-terraform -chdir=/Users/jordannelson/aws-landing-zone/network apply tfplan
+mkdir -p /private/tmp/rg-cli-shim
+printf '#!/bin/sh\nunset AWS_PROFILE\nexec /opt/homebrew/bin/terraform "$@"\n' > /private/tmp/rg-cli-shim/terraform
+chmod +x /private/tmp/rg-cli-shim/terraform
+export PATH=/private/tmp/rg-cli-shim:$PATH
+```
+
+Every `terraform` command and script in this runbook assumes that PATH.
+
+## 1. Infrastructure (operator applies)
+
+Each root reads a gitignored, mode-0600 `phase-c.tfvars.json`. The prepare script writes
+the network file, and with `--workload` (after the network applies) the workload file.
+Write `delivery/phase-c.tfvars.json` by hand with the keys in `delivery/example.tfvars`
+plus `github_repository`.
+
+```sh
 python3 /Users/jordannelson/aws-landing-zone/scripts/prepare-workload-inputs.py
+terraform -chdir=/Users/jordannelson/aws-landing-zone/network plan -var-file=phase-c.tfvars.json -out tfplan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/network apply tfplan
+python3 /Users/jordannelson/aws-landing-zone/scripts/prepare-workload-inputs.py --workload
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload plan -var-file=phase-c.tfvars.json -out tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload apply tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery init
-terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -out tfplan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -var-file=phase-c.tfvars.json -out tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery apply tfplan
 ```
 
@@ -39,7 +61,7 @@ Publish the deployment contract (ADR-0005) with platform-guardrails, exactly as
 `tf-apply.yml` does after a CI apply:
 
 ```sh
-AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails/scripts/publish-contract.sh \
+AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh \
   /Users/jordannelson/aws-landing-zone/delivery /delivery/release-guard/prod/contract \
   /Users/jordannelson/aws-landing-zone/delivery/contract-allowlist.txt
 ```
@@ -54,6 +76,8 @@ AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails/scripts/p
 
 `bootstrap-platform.sh` installs Flux from the mirrored images, creates the `orders`
 database and its two IAM-authenticated roles, and applies `deploy/platform/aws`.
+The verifier image is tagged with the HEAD commit, so rerun `mirror-images.sh` before
+rerunning bootstrap on a new commit.
 
 ## 3. Turn on delivery
 
@@ -98,15 +122,53 @@ releasectl status --table release-guard-deployments --region us-east-1
 kubectl --kubeconfig ~/.kube/release-guard-aws.yaml -n orders get kustomization,deploy
 ```
 
+## When a rollout fails on AWS
+
+Two failures the local scenarios cannot reproduce, both fixed in the manifests:
+
+- **IRSA refuses the migrator.** The migrate Kustomization's `nameSuffix` renamed its
+  ServiceAccount, and the IRSA trust only accepts `orders-migrator`. The ServiceAccount
+  now lives in `deploy/platform/base/migrator.yaml`, outside the suffixed Kustomization.
+- **Pods rejected by PodSecurity.** The CloudWatch observability add-on annotates pod
+  templates and injects OpenTelemetry init containers that violate the `restricted`
+  profile. The orders pod template sets the add-on's inject and auto-annotate
+  annotations to `false`.
+
+If a failed first release leaves no healthy release, both promote and initialize are
+blocked. Recover with `override.yml` and an approval in `production-override`.
+
 ## 5. Teardown (operator destroys)
+
+The workload backup vault must have no recovery points:
+
+```sh
+aws backup list-backup-vaults --profile release-guard-prod \
+  --query 'BackupVaultList[].[BackupVaultName,NumberOfRecoveryPoints]' --output table
+```
+
+Keep the account's EBS encryption default by removing it from state before the workload
+destroy.
 
 ```sh
 gh variable set DELIVERY_ENABLED --repo jordann6/release-guard --body false
-AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails/scripts/publish-contract.sh --delete /delivery/release-guard/prod/contract
-terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -destroy -out destroy.tfplan
+AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh --delete /delivery/release-guard/prod/contract
+terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery apply destroy.tfplan
-# then workload, then network, each from a reviewed destroy plan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/workload state rm aws_ebs_encryption_by_default.this
+terraform -chdir=/Users/jordannelson/aws-landing-zone/workload plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/workload apply destroy.tfplan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/network plan -destroy -var-file=phase-c.tfvars.json -out destroy.tfplan
+terraform -chdir=/Users/jordannelson/aws-landing-zone/network apply destroy.tfplan
 ```
 
-Verify nothing hourly remains, keep the member accounts and the retained foundation, and
-check the bill the next day.
+Review each destroy plan before applying it. Then confirm every root's state is empty
+and the hourly guard passes:
+
+```sh
+for r in delivery workload network; do
+  terraform -chdir=/Users/jordannelson/aws-landing-zone/$r state list \
+    | /Users/jordannelson/platform-guardrails-v1.5.0/scripts/hourly-guard.sh && echo "$r clean"
+done
+```
+
+Keep the member accounts and the retained foundation, and check the bill the next day.

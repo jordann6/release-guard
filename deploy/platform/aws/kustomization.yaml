@@ -37,6 +37,13 @@ patches:
         value: aws
   - target:
       kind: ServiceAccount
+      name: orders-migrator
+    patch: |
+      - op: replace
+        path: /metadata/annotations/eks.amazonaws.com~1role-arn
+        value: ${MIGRATOR_ROLE_ARN}
+  - target:
+      kind: ServiceAccount
       name: verifier
     patch: |
       - op: replace
