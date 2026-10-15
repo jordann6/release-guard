@@ -71,6 +71,20 @@ public sealed class ManifestRendererTests : IDisposable
         Assert.Contains("namespace: orders", platform, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("java")]
+    [InlineData("python")]
+    [InlineData("dotnet")]
+    [InlineData("nodejs")]
+    public void App_pods_opt_out_of_addon_auto_instrumentation(string language)
+    {
+        // The EKS observability add-on injects init containers that violate the restricted
+        // PodSecurity profile of the orders namespace, so no pod of the release can start.
+        var deployment = Yaml(Path.Combine(RepositoryRoot(), "deploy", "release", "app", "deployment.yaml"));
+        Assert.Contains($"instrumentation.opentelemetry.io/inject-{language}: \"false\"", deployment, StringComparison.Ordinal);
+        Assert.Contains($"cloudwatch.aws.amazon.com/auto-annotate-{language}: \"false\"", deployment, StringComparison.Ordinal);
+    }
+
     /// <summary>The file without comment lines.</summary>
     private static string Yaml(string path) =>
         string.Join('\n', File.ReadAllLines(path).Where(l => !l.TrimStart().StartsWith('#')));

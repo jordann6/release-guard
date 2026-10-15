@@ -19,6 +19,18 @@ spec:
       app.kubernetes.io/name: orders-api
   template:
     metadata:
+      annotations:
+        # The CloudWatch observability add-on auto-annotates workloads and injects OpenTelemetry
+        # init containers that fail the restricted PodSecurity profile of this namespace. The
+        # application carries its own telemetry, so injection is switched off explicitly.
+        instrumentation.opentelemetry.io/inject-java: "false"
+        instrumentation.opentelemetry.io/inject-python: "false"
+        instrumentation.opentelemetry.io/inject-dotnet: "false"
+        instrumentation.opentelemetry.io/inject-nodejs: "false"
+        cloudwatch.aws.amazon.com/auto-annotate-java: "false"
+        cloudwatch.aws.amazon.com/auto-annotate-python: "false"
+        cloudwatch.aws.amazon.com/auto-annotate-dotnet: "false"
+        cloudwatch.aws.amazon.com/auto-annotate-nodejs: "false"
       labels:
         app.kubernetes.io/name: orders-api
     spec:
