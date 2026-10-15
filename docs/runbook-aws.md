@@ -27,7 +27,7 @@ apply and destroy from a reviewed saved plan. Infrastructure lives in
 ```sh
 terraform -chdir=/Users/jordannelson/aws-landing-zone/network plan -out tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/network apply tfplan
-python3 /Users/jordannelson/aws-landing-zone/scripts/prepare-workload-inputs.py
+python3 /Users/jordannelson/aws-landing-zone/scripts/prepare-workload-inputs.py --workload
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload plan -var-file=phase-c.tfvars.json -out tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/workload apply tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery init
@@ -39,7 +39,7 @@ Publish the deployment contract (ADR-0005) with platform-guardrails, exactly as
 `tf-apply.yml` does after a CI apply:
 
 ```sh
-AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails/scripts/publish-contract.sh \
+AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh \
   /Users/jordannelson/aws-landing-zone/delivery /delivery/release-guard/prod/contract \
   /Users/jordannelson/aws-landing-zone/delivery/contract-allowlist.txt
 ```
@@ -102,7 +102,7 @@ kubectl --kubeconfig ~/.kube/release-guard-aws.yaml -n orders get kustomization,
 
 ```sh
 gh variable set DELIVERY_ENABLED --repo jordann6/release-guard --body false
-AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails/scripts/publish-contract.sh --delete /delivery/release-guard/prod/contract
+AWS_PROFILE=release-guard-prod /Users/jordannelson/platform-guardrails-v1.5.0/scripts/publish-contract.sh --delete /delivery/release-guard/prod/contract
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery plan -destroy -out destroy.tfplan
 terraform -chdir=/Users/jordannelson/aws-landing-zone/delivery apply destroy.tfplan
 # then workload, then network, each from a reviewed destroy plan
