@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AWSSDK.SecurityToken" />
     <PackageReference Include="KubernetesClient" />
   </ItemGroup>
 

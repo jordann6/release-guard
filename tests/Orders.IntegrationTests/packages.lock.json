@@ -665,6 +665,7 @@
         "type": "Project",
         "dependencies": {
           "AWSSDK.RDS": "[4.0.106.4, )",
+          "AWSSDK.SecurityToken": "[4.0.101.4, )",
           "EFCore.NamingConventions": "[10.0.1, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.13, )",
@@ -697,6 +698,15 @@
         "requested": "[4.0.106.4, )",
         "resolved": "4.0.106.4",
         "contentHash": "3ZwcZEfQaqQnpChZvNXv/1n8wBL1v367HUX4LCSg6jB1EbAZwXdLRYdMXkwonpEHAyAZSlkgRzqbY0YzXV8Z8Q==",
+        "dependencies": {
+          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+        }
+      },
+      "AWSSDK.SecurityToken": {
+        "type": "CentralTransitive",
+        "requested": "[4.0.101.4, )",
+        "resolved": "4.0.101.4",
+        "contentHash": "vjha/QlWaemVuL4A81mwxqGRR52meo+naCp1ELk/UTxrUiSn4fltXMCLlooZKURzwfdHd6dDDQHUL8cjT8xW3w==",
         "dependencies": {
           "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
         }
