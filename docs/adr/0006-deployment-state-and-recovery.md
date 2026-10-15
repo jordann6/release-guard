@@ -15,8 +15,7 @@ DynamoDB table `release-guard-deployments`: on-demand, KMS-encrypted, point-in-t
 
 | `pk` | `sk` | Writer | Content |
 |---|---|---|---|
-| `LOCK#prod` | `STATE` | promote role | `state`, `inflight_seq`, `lease_owner`, `lease_until`, `last_healthy_seq`, `version` |
-| `SEQ#prod` | `COUNTER` | promote role | `next_seq` |
+| `LOCK#prod` | `STATE` | promote role | `state`, `last_seq`, `inflight_seq`, `lease_owner`, `lease_until`, `last_healthy_seq`, `version` |
 | `DEPLOY#prod#<seq>` | `RECORD` | promote role | `kind` (`normal`, `rollback`, `override`, `initialize`), `source_commit`, `image_digest`, `artifact_tag`, `artifact_digest`, `scan_evidence` (Trivy report SHA-256, result, scanned digest), `sbom_digest`, `pr_evidence` (PR, tree), `run_url`, `created_at` |
 | `VERIFY#prod#<seq>` | `RESULT` | verifier | `result` (`pass`, `fail`, `timeout`), `observed_artifact_revision`, `observed_image_digest`, `rollout` summary, `smoke` results, `started_at`, `finished_at`, `reason` |
 | `OVERRIDE#prod#<image-digest>` | `GRANT` | promote role in `production-override` | `reason`, `expires_at`, `approved_run_url`, `actor`, `consumed_by_seq` |
@@ -54,7 +53,7 @@ Composite partition keys let IAM `dynamodb:LeadingKeys` separate the writers (AD
 
 The verifier only writes `VERIFY#` items. `releasectl wait`, running as the promote role, reads the verdict and moves the lock. When no workflow is running, the next `releasectl` invocation reconciles the lock from the `VERIFY#` items before doing anything else.
 
-Every lock change is a conditional `UpdateItem` requiring the expected `state` and `version`, and it increments `version`. Two runs racing for the lock cannot both win. The release workflows also use `concurrency: deploy-prod` with `cancel-in-progress: false`, which is a second layer, not the guarantee.
+Every lock change is a conditional write requiring the expected `version`, and it increments `version`. The release sequence lives on the same item (`last_seq`), so allocating a sequence number and taking the lock are one conditional write. Two runs racing for the lock cannot both win. The release workflows also use `concurrency: deploy-prod` with `cancel-in-progress: false`, which is a second layer, not the guarantee.
 
 ### Promotion is blocked when
 
@@ -81,7 +80,7 @@ A hard deadline of 10 minutes from `DEPLOY#.created_at` produces a `timeout` ver
 - Promote takes a lease: `lease_until = now + 15 minutes`. `releasectl wait` polls for up to 12 minutes.
 - If the workflow is cancelled or the runner dies, the lock stays `DEPLOYING`. The verifier keeps running independently and still writes its verdict. The next `releasectl` call applies it. If no verdict exists after `lease_until`, it moves the lock to `VERIFY_TIMEOUT`.
 - **Retries are idempotent by commit.** Rerunning promote for a commit whose `DEPLOY#` already exists for the in-flight seq does not publish again. It resumes waiting. A rerun after a verdict reports the verdict and exits.
-- Promote takes the lock before it publishes. One `TransactWriteItems` call increments `SEQ#prod`, moves the lock to `DEPLOYING` with `inflight_seq`, and creates `DEPLOY#prod#<seq>` with `artifact_digest` empty. Only then is the artifact pushed as `1.0.<seq>` and its digest written to the record. The verifier treats a record without an artifact digest as not yet published, and the 10-minute deadline still applies. A run that dies before the push therefore ends in `VERIFY_TIMEOUT`. That blocks promotion until a rollback, which republishes the healthy release under a higher version and is harmless when nothing changed.
+- Promote takes the lock before it publishes. One `TransactWriteItems` call increments `last_seq`, moves the lock to `DEPLOYING` with `inflight_seq`, creates `DEPLOY#prod#<seq>` with `artifact_digest` empty, and for an override marks the grant consumed. Only then is the artifact pushed as `1.0.<seq>` and its digest written to the record. The verifier treats a record without an artifact digest as not yet published, and the 10-minute deadline still applies. A run that dies before the push therefore ends in `VERIFY_TIMEOUT`. That blocks promotion until a rollback, which republishes the healthy release under a higher version and is harmless when nothing changed.
 
 ### Recovery
 
@@ -107,7 +106,7 @@ If the rollback fails verification, the lock moves to `ROLLBACK_FAILED` and ever
 
 ### First deployment
 
-- `promote --initialize` is valid only when the lock item does not exist. It creates the lock, sets `SEQ#prod` to 1, and records `kind: initialize`.
+- `promote --initialize` is valid only when the lock item does not exist. It creates the lock with `last_seq` 1 and records `kind: initialize`.
 - Before it runs, the operator must have completed the one-time steps in the runbook: database users created, Flux installed with mirrored images, the verifier deployed.
 - If the first release fails, there is no healthy release to roll back to. The lock stays `FAILED` until a fixed release is promoted with an override.
 

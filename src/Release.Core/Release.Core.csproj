@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Release.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.DynamoDBv2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Release.UnitTests" />
+    <InternalsVisibleTo Include="Release.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

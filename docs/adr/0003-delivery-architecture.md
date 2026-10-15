@@ -40,7 +40,7 @@ All three use KMS encryption and scan on push. Flux controller images are copied
 
 The channel is kept separate from the immutable image tags:
 
-- Each promotion allocates the next release sequence `N` from DynamoDB with a conditional increment (ADR-0006).
+- Each promotion allocates the next release sequence `N` on the deployment lock with a conditional write (ADR-0006).
 - The rendered artifact is pushed as `<deploy-repo>:1.0.N`. Because the repository is immutable, `1.0.N` can never be rewritten.
 - The Flux `OCIRepository` uses `ref.semver: ">=1.0.0"` and follows the highest version.
 
