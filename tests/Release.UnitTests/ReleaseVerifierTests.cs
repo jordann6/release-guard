@@ -90,6 +90,28 @@ public class ReleaseVerifierTests
     }
 
     [Fact]
+    public async Task Fails_fast_when_the_migration_step_fails_for_the_release()
+    {
+        await StartAsync(1, artifact: 9);
+        cluster.Migrate = new KustomizationStatus(false, "ReconciliationFailed", "Job/orders/orders-migrate-1 dry-run failed", null, "1.0.1@" + Digest(9));
+        cluster.Kustomization = new KustomizationStatus(false, "DependencyNotReady", "dependency not ready", null, null);
+
+        var tick = await verifier.TickAsync(Ct);
+        Assert.Equal(VerdictResult.Fail, tick.Verdict!.Result);
+        Assert.Contains("Migration step failed", tick.Verdict.Reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Earlier_migration_failure_does_not_fail_a_new_release()
+    {
+        await StartAsync(1, artifact: 9);
+        cluster.Migrate = new KustomizationStatus(false, "ReconciliationFailed", "old", null, "1.0.0@" + Digest(8));
+        cluster.Kustomization = new KustomizationStatus(false, "DependencyNotReady", "dependency not ready", null, null);
+
+        Assert.Equal(TickOutcome.Waiting, (await verifier.TickAsync(Ct)).Outcome);
+    }
+
+    [Fact]
     public async Task Fails_when_the_running_image_is_not_the_released_digest()
     {
         await StartAsync(1, artifact: 9);
@@ -203,9 +225,12 @@ public class ReleaseVerifierTests
     {
         public KustomizationStatus? Kustomization { get; set; }
 
+        public KustomizationStatus? Migrate { get; set; }
+
         public RolloutStatus? Rollout { get; set; }
 
-        public Task<KustomizationStatus?> GetKustomizationAsync(CancellationToken cancellationToken) => Task.FromResult(Kustomization);
+        public Task<KustomizationStatus?> GetKustomizationAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(name == "orders-migrate" ? Migrate : Kustomization);
 
         public Task<RolloutStatus?> GetRolloutAsync(CancellationToken cancellationToken) => Task.FromResult(Rollout);
     }

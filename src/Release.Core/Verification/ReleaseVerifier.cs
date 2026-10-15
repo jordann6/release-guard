@@ -24,7 +24,7 @@ public sealed record RolloutStatus(
 
 public interface IClusterObserver
 {
-    Task<KustomizationStatus?> GetKustomizationAsync(CancellationToken cancellationToken);
+    Task<KustomizationStatus?> GetKustomizationAsync(string name, CancellationToken cancellationToken);
 
     Task<RolloutStatus?> GetRolloutAsync(CancellationToken cancellationToken);
 }
@@ -40,6 +40,10 @@ public sealed record VerifierOptions
 
     /// <summary>Time from the release record's creation to a verdict (ADR-0006).</summary>
     public TimeSpan Deadline { get; init; } = TimeSpan.FromMinutes(10);
+
+    public string AppKustomization { get; init; } = "orders-app";
+
+    public string MigrateKustomization { get; init; } = "orders-migrate";
 }
 
 public enum TickOutcome
@@ -107,18 +111,24 @@ public sealed partial class ReleaseVerifier(
         }
 
         var expectedSuffix = "@" + artifactDigest;
-        var kustomization = await cluster.GetKustomizationAsync(cancellationToken).ConfigureAwait(false);
+
+        // The application waits on the migration step; a failed migration would otherwise
+        // only surface as a timeout.
+        var migrate = await cluster.GetKustomizationAsync(options.MigrateKustomization, cancellationToken).ConfigureAwait(false);
+        if (FailedAt(migrate, expectedSuffix))
+        {
+            return await RecordAsync(deployment, VerdictResult.Fail, $"Migration step failed for release {seq}: {migrate!.Reason}: {migrate.Message}", migrate.LastAttemptedRevision, null, [], cancellationToken).ConfigureAwait(false);
+        }
+
+        var kustomization = await cluster.GetKustomizationAsync(options.AppKustomization, cancellationToken).ConfigureAwait(false);
         if (kustomization is null)
         {
             return Wait("Flux Kustomization not found.");
         }
 
-        if (!kustomization.Ready
-            && EndsWith(kustomization.LastAttemptedRevision, expectedSuffix)
-            && kustomization.Reason is { } reason
-            && FailureReasons.Contains(reason))
+        if (FailedAt(kustomization, expectedSuffix))
         {
-            return await RecordAsync(deployment, VerdictResult.Fail, $"Flux failed to apply release {seq}: {reason}: {kustomization.Message}", kustomization.LastAttemptedRevision, null, [], cancellationToken).ConfigureAwait(false);
+            return await RecordAsync(deployment, VerdictResult.Fail, $"Flux failed to apply release {seq}: {kustomization.Reason}: {kustomization.Message}", kustomization.LastAttemptedRevision, null, [], cancellationToken).ConfigureAwait(false);
         }
 
         if (!kustomization.Ready || !EndsWith(kustomization.LastAppliedRevision, expectedSuffix))
@@ -199,6 +209,11 @@ public sealed partial class ReleaseVerifier(
         LogVerdict(logger, deployment.Seq, result, reason);
         return new TickResult(TickOutcome.Recorded, reason, verdict);
     }
+
+    private static bool FailedAt(KustomizationStatus? status, string expectedSuffix) =>
+        status is { Ready: false, Reason: { } reason }
+        && FailureReasons.Contains(reason)
+        && EndsWith(status.LastAttemptedRevision, expectedSuffix);
 
     private static bool EndsWith(string? value, string suffix) =>
         value is not null && value.EndsWith(suffix, StringComparison.Ordinal);

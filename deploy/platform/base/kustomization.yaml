@@ -1,0 +1,10 @@
+# Platform layer for one environment: everything that is not a release.
+# Applied once per environment by the operator (local: scripts/local/up.sh;
+# AWS: the Flux bootstrap runbook). Releases never change these objects.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - flux-tenant.yaml
+  - flux-delivery.yaml
+  - verifier.yaml

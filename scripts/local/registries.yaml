@@ -1,0 +1,5 @@
+# k3s containerd: pull from the k3d registry over plain HTTP on its in-network port.
+mirrors:
+  "k3d-rg-registry:5000":
+    endpoint:
+      - http://k3d-rg-registry:5000

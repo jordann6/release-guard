@@ -3,6 +3,7 @@
     <Project Path="src/Orders.Api/Orders.Api.csproj" />
     <Project Path="src/Release.Cli/Release.Cli.csproj" />
     <Project Path="src/Release.Core/Release.Core.csproj" />
+    <Project Path="src/Release.Verifier/Release.Verifier.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Orders.IntegrationTests/Orders.IntegrationTests.csproj" />

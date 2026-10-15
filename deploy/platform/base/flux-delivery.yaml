@@ -1,0 +1,56 @@
+# Pull-based delivery (ADR-0003). The OCIRepository follows the highest 1.0.N
+# deployment artifact; a rollback publishes a higher N with healthy content.
+# Overlays set url, provider and insecure for the environment.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: orders-release
+  namespace: orders
+spec:
+  interval: 30s
+  url: oci://REPLACED-BY-OVERLAY
+  ref:
+    semver: ">=1.0.0"
+  provider: generic
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: orders-migrate
+  namespace: orders
+spec:
+  interval: 1m
+  sourceRef:
+    kind: OCIRepository
+    name: orders-release
+  path: ./migrate
+  prune: true
+  wait: true
+  timeout: 5m
+  serviceAccountName: orders-reconciler
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: orders-settings
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: orders-app
+  namespace: orders
+spec:
+  interval: 1m
+  dependsOn:
+    - name: orders-migrate
+  sourceRef:
+    kind: OCIRepository
+    name: orders-release
+  path: ./app
+  prune: true
+  wait: true
+  timeout: 4m
+  serviceAccountName: orders-reconciler
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: orders-settings

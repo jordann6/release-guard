@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Release.Verifier</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Release.Core/Release.Core.csproj" />
+  </ItemGroup>
+
+</Project>
