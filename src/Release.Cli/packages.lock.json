@@ -4,29 +4,29 @@
     "net10.0": {
       "AWSSDK.ECR": {
         "type": "Direct",
-        "requested": "[4.0.101.10, )",
-        "resolved": "4.0.101.10",
-        "contentHash": "w5OwNLFTEZwwkHqZ/JSbpnVRmwhIVbBjITimMK/vVapw+F7XFNiKW9DUgNjRg13HWhoUfvTbnA8hS/MTFub0kw==",
+        "requested": "[4.0.101.12, )",
+        "resolved": "4.0.101.12",
+        "contentHash": "XX+weBV/GHGvJRqtEFI0NOZ8qaFAKKaL1FmzVkJe9fBm93/hWTkUBZ07VW3pLw4JWadsXIyA91VtFuQ8/btjkg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.13, 5.0.0)"
         }
       },
       "AWSSDK.SecurityToken": {
         "type": "Direct",
-        "requested": "[4.0.101.4, )",
-        "resolved": "4.0.101.4",
-        "contentHash": "vjha/QlWaemVuL4A81mwxqGRR52meo+naCp1ELk/UTxrUiSn4fltXMCLlooZKURzwfdHd6dDDQHUL8cjT8xW3w==",
+        "requested": "[4.0.101.6, )",
+        "resolved": "4.0.101.6",
+        "contentHash": "v/9v1tYkmvVgH9KCQBUfEi9j0TxUfpQBSJrDfA1Z0fzrJDhtG5W4TaaIvqZrcNTYSrgHyFEY5jKel/ebDY4XfA==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.13, 5.0.0)"
         }
       },
       "AWSSDK.SimpleSystemsManagement": {
         "type": "Direct",
-        "requested": "[4.0.104.4, )",
-        "resolved": "4.0.104.4",
-        "contentHash": "xVGj6/CGwDpq3CdVe5mDVLAFl6aQzGCGqsFwxlQ+qJH9glIF+y0BS2Lw57X8Uj97YtZrUrMP/37YJk6M27qLhQ==",
+        "requested": "[4.0.104.6, )",
+        "resolved": "4.0.104.6",
+        "contentHash": "yv3MVaxnrp0mftXCZ4QKcd5OynzYdI45o7tpRtzD9eyKjsTf9mXeiHwFPGswfKMP28eCK8AAzCW0z0GfVvvJeg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.13, 5.0.0)"
         }
       },
       "System.CommandLine": {
@@ -37,8 +37,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.11",
-        "contentHash": "K9PP9/qHQ7pqSB0lYwStJrpXQ8P1xc7Fbn3CyPg8EX78p4+yz8dhIiwiRc3aVbVrUZxmPAPRvmZm+ey1euIXGg=="
+        "resolved": "4.0.102.13",
+        "contentHash": "vaYs/kwfB+Lv9PeVKYE4g2mQlzVtHImXLWgfTG8UgeCybUAPkew5kwb8GS6RhuzwvImbolyLHT+IM34WoM9lJg=="
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "Transitive",
@@ -48,17 +48,17 @@
       "release.core": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.DynamoDBv2": "[4.0.107.3, )",
+          "AWSSDK.DynamoDBv2": "[4.0.109.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )"
         }
       },
       "AWSSDK.DynamoDBv2": {
         "type": "CentralTransitive",
-        "requested": "[4.0.107.3, )",
-        "resolved": "4.0.107.3",
-        "contentHash": "YDESEbXKSmuIR6wnNBdKGuEJ28Lte/O/qiQQvGdmdP5dM0Es75hD9hDLiDHvLIZUOgQoEWRc2CcpyFIWMJIOEw==",
+        "requested": "[4.0.109.1, )",
+        "resolved": "4.0.109.1",
+        "contentHash": "GJeycIKL2UyUVf5ew5bVezy4LIeWZm1oWt1Dvx6LK+oGar99Nexzbp7IsmHHII/mWJKRDRirbW7LOTBggYeeNg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.13, 5.0.0)"
         }
       },
       "Microsoft.Extensions.Logging.Abstractions": {

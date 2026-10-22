@@ -1,23 +1,23 @@
 <Project>
   <ItemGroup>
     <!-- Application -->
-    <PackageVersion Include="AWSSDK.RDS" Version="4.0.106.4" />
+    <PackageVersion Include="AWSSDK.RDS" Version="4.0.107.1" />
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.13" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
 
     <!-- Release tooling -->
-    <PackageVersion Include="AWSSDK.DynamoDBv2" Version="4.0.107.3" />
-    <PackageVersion Include="AWSSDK.ECR" Version="4.0.101.10" />
-    <PackageVersion Include="AWSSDK.SecurityToken" Version="4.0.101.4" />
-    <PackageVersion Include="AWSSDK.SimpleSystemsManagement" Version="4.0.104.4" />
+    <PackageVersion Include="AWSSDK.DynamoDBv2" Version="4.0.109.1" />
+    <PackageVersion Include="AWSSDK.ECR" Version="4.0.101.12" />
+    <PackageVersion Include="AWSSDK.SecurityToken" Version="4.0.101.6" />
+    <PackageVersion Include="AWSSDK.SimpleSystemsManagement" Version="4.0.104.6" />
     <PackageVersion Include="KubernetesClient" Version="21.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.13" />
