@@ -4,11 +4,11 @@
     "net10.0": {
       "AWSSDK.SecurityToken": {
         "type": "Direct",
-        "requested": "[4.0.101.4, )",
-        "resolved": "4.0.101.4",
-        "contentHash": "vjha/QlWaemVuL4A81mwxqGRR52meo+naCp1ELk/UTxrUiSn4fltXMCLlooZKURzwfdHd6dDDQHUL8cjT8xW3w==",
+        "requested": "[4.0.101.7, )",
+        "resolved": "4.0.101.7",
+        "contentHash": "n0aalsNSHL/qVb5rgOFnxN5bG+MPCybAlRShaaf+XL2WIOTmvoS6RU+HcjtTez/SrQ3NRfSXAphSqKKybsVS9A==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
         }
       },
       "KubernetesClient": {
@@ -23,8 +23,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.11",
-        "contentHash": "K9PP9/qHQ7pqSB0lYwStJrpXQ8P1xc7Fbn3CyPg8EX78p4+yz8dhIiwiRc3aVbVrUZxmPAPRvmZm+ey1euIXGg=="
+        "resolved": "4.0.102.14",
+        "contentHash": "pRYOOIyj40UdQ6G9iq8AOU30sFPqWS/umM/sFTmAl4n1S6AVbVa67DJpJTxD+9qJFqweHPcyVW7Qb4BbUBLJdg=="
       },
       "Fractions": {
         "type": "Transitive",
@@ -39,16 +39,16 @@
       "release.core": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.DynamoDBv2": "[4.0.107.3, )"
+          "AWSSDK.DynamoDBv2": "[4.0.109.3, )"
         }
       },
       "AWSSDK.DynamoDBv2": {
         "type": "CentralTransitive",
-        "requested": "[4.0.107.3, )",
-        "resolved": "4.0.107.3",
-        "contentHash": "YDESEbXKSmuIR6wnNBdKGuEJ28Lte/O/qiQQvGdmdP5dM0Es75hD9hDLiDHvLIZUOgQoEWRc2CcpyFIWMJIOEw==",
+        "requested": "[4.0.109.3, )",
+        "resolved": "4.0.109.3",
+        "contentHash": "xPZSBd65Qpxi2pXJOkTHxa1cb6cQKC0ociQ0NGzmxYHvgJtQ18aVfbYpoEh4zmYQ1LQq2U1Ch/kfV+aR3rjJWg==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.11, 5.0.0)"
+          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
         }
       }
     }
