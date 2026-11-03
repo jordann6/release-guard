@@ -1,0 +1,15 @@
+# Delivery platform (ADR-0009): the cluster-wide pieces every application release
+# relies on, with no application names in them. Installed once per cluster by the
+# environment's platform layer. Planned to move to platform-guardrails
+# (k8s/delivery-platform) once proven here.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - monitoring.yaml
+images:
+  - name: otel-collector
+    newName: otel/opentelemetry-collector
+    digest: sha256:28b6d41ac51bff6b41ba5e8fe503569ffb9d6a1ea90f7a78419e86f34e44f750 # 0.164.0
+  - name: prometheus
+    newName: prom/prometheus
+    digest: sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2 # v3.15.1

@@ -1,0 +1,82 @@
+# Synthetic traffic (ADR-0009). Canary analysis judges a release by its error rate
+# and latency, which needs requests. The demo environments have no users, so this
+# client creates an order and reads it back about five times a second, the same
+# path a real client takes. It runs in its own namespace and is not a release.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synthetic
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synthetic-traffic
+  namespace: synthetic
+data:
+  run.sh: |
+    #!/bin/sh
+    # Each loop: POST /orders, then GET the created order. Status codes only; a
+    # failed call is logged and the loop continues.
+    base="${TARGET:-http://orders-api.orders.svc.cluster.local}"
+    n=0
+    while true; do
+      n=$((n + 1))
+      body="$(curl -s -m 2 -X POST "$base/orders" -H 'content-type: application/json' \
+        -H "Idempotency-Key: syn-${HOSTNAME}-$n" \
+        -d '{"sku":"SYN-1","quantity":1,"customerReference":"synthetic"}')" || body=""
+      id="$(printf '%s' "$body" | sed -n 's/.*"id":"\([0-9a-f-]*\)".*/\1/p')"
+      if [ -n "$id" ]; then
+        curl -s -m 2 -o /dev/null "$base/orders/$id" || true
+      fi
+      sleep "${INTERVAL:-0.2}"
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: synthetic-traffic
+  namespace: synthetic
+  labels:
+    app.kubernetes.io/name: synthetic-traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: synthetic-traffic
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: synthetic-traffic
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          image: curl
+          command: ["/bin/sh", "/scripts/run.sh"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: synthetic-traffic
