@@ -1,0 +1,9 @@
+# Teaches kustomize where a Rollout keeps its pod template annotations, so the
+# release annotations releasectl appends (release-guard/seq, release-guard/commit)
+# reach the pods, where the app reads them as Release__Version (ADR-0003). The
+# image digest needs no entry: kustomize already rewrites spec/template/spec/
+# containers[]/image on any kind.
+commonAnnotations:
+  - path: spec/template/metadata/annotations
+    create: true
+    kind: Rollout

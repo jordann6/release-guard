@@ -23,8 +23,12 @@ rules:
   - apiGroups: [""]
     resources: [serviceaccounts, services, configmaps]
     verbs: [get, list, watch, create, update, patch, delete]
+  # Deployments only so releases from before the canary (ADR-0009) can be pruned.
   - apiGroups: [apps]
     resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
     verbs: [get, list, watch, create, update, patch, delete]
   - apiGroups: [batch]
     resources: [jobs]

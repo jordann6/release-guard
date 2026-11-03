@@ -1,0 +1,25 @@
+# Argo Rollouts controller (ADR-0009), vendored unmodified so a cluster build never
+# depends on GitHub at apply time. The controller runs as non-root with a read-only
+# root filesystem, so the namespace enforces the restricted profile.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argo-rollouts
+resources:
+  - namespace.yaml
+  - install-v1.10.1.yaml
+images:
+  - name: quay.io/argoproj/argo-rollouts
+    digest: sha256:fbcc4cf0a29da25d86230992b1dfdeadf30b6f1baa74ea7c9c98e3e580769396 # v1.10.1
+patches:
+  - target:
+      kind: Deployment
+      name: argo-rollouts
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: add
+        path: /spec/template/spec/containers/0/resources/requests
+        value:
+          cpu: 50m
+          memory: 64Mi

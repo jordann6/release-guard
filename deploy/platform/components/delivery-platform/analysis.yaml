@@ -1,0 +1,54 @@
+# Release analysis (ADR-0009). Generic: any service that exports the OpenTelemetry
+# HTTP server metrics with service.name and service.version can use it from a Rollout
+# step with clusterScope: true. It judges only the canary version's own requests;
+# health probes are excluded so they cannot dilute the error ratio.
+#
+# No data is never a pass: if the canary served no requests the query returns no
+# sample, the measurement errors, and repeated errors fail the analysis.
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: http-canary
+spec:
+  args:
+    - name: service-name
+    - name: service-version
+    - name: max-error-ratio
+      value: "0.01"
+    - name: max-p95-seconds
+      value: "0.5"
+    - name: prometheus-address
+      value: http://prometheus.monitoring.svc.cluster.local:9090
+  metrics:
+    - name: error-ratio
+      # Metrics are exported every few seconds; give the canary time to serve and
+      # report before the first measurement.
+      initialDelay: 30s
+      interval: 20s
+      count: 4
+      failureLimit: 0
+      consecutiveErrorLimit: 3
+      successCondition: len(result) == 1 && !isNaN(result[0]) && result[0] <= {{args.max-error-ratio}}
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            (
+              sum(rate(http_server_request_duration_seconds_count{service_name="{{args.service-name}}",service_version="{{args.service-version}}",http_route!~"/health.*",http_response_status_code=~"5.."}[1m]))
+              or vector(0)
+            )
+            /
+            sum(rate(http_server_request_duration_seconds_count{service_name="{{args.service-name}}",service_version="{{args.service-version}}",http_route!~"/health.*"}[1m]))
+    - name: p95-latency
+      initialDelay: 30s
+      interval: 20s
+      count: 4
+      failureLimit: 1
+      consecutiveErrorLimit: 3
+      successCondition: len(result) == 1 && !isNaN(result[0]) && result[0] <= {{args.max-p95-seconds}}
+      provider:
+        prometheus:
+          address: "{{args.prometheus-address}}"
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_server_request_duration_seconds_bucket{service_name="{{args.service-name}}",service_version="{{args.service-version}}",http_route!~"/health.*"}[1m])))

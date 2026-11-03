@@ -68,7 +68,7 @@ Releases carry no environment values. Each environment's platform layer provides
 
 - `Deployment` strategy `RollingUpdate`, `maxSurge: 1`, `maxUnavailable: 0`, `progressDeadlineSeconds: 240`, 2 replicas, `PodDisruptionBudget minAvailable: 1`.
 - Readiness checks the database. Liveness checks only the process.
-- Canary delivery and additional environments are deferred until the release and recovery paths are proven.
+- Superseded by ADR-0009 (2026-11-03): releases are now Argo Rollouts canaries with automated analysis. Additional environments are still deferred.
 
 ### Database migrations
 

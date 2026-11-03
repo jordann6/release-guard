@@ -39,14 +39,8 @@ patches:
       - op: add
         path: /spec/insecure
         value: true
-  # Fail broken rollouts quickly in local scenarios (AWS keeps the base 4 minutes).
-  - target:
-      kind: Kustomization
-      name: orders-app
-    patch: |
-      - op: replace
-        path: /spec/timeout
-        value: 90s
+  # Local canaries share the base timeout; a broken canary still fails fast because
+  # an aborted Rollout reports Degraded, which the health check treats as failed.
   - target:
       kind: ServiceAccount
       name: orders-migrator
@@ -73,3 +67,7 @@ patches:
         value:
           name: Verifier__DynamoEndpoint
           value: http://dynamodb.data.svc.cluster.local:8000
+      # The local verifier image is rebuilt under the same mutable tag by up.sh.
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always

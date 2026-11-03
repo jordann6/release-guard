@@ -199,6 +199,78 @@ public class ReleaseVerifierTests
         Assert.Equal(EnvironmentState.Healthy, (await guard.ReconcileAsync(Env, Ct))!.State);
     }
 
+    [Fact]
+    public async Task Fails_as_soon_as_the_canary_for_the_release_is_aborted()
+    {
+        await StartAsync(1, artifact: 9);
+        // Flux has attempted the revision and is still waiting on its health check.
+        cluster.Kustomization = new KustomizationStatus(false, "Progressing", "Health check in progress", "1.0.0@" + Digest(8), "1.0.1@" + Digest(9));
+        cluster.Rollout = Rollout(1) with
+        {
+            Updated = 1,
+            Phase = "Degraded",
+            Aborted = true,
+            Message = "RolloutAborted: Rollout aborted update to revision 2: Metric \"error-ratio\" assessed Failed",
+        };
+
+        var tick = await verifier.TickAsync(Ct);
+
+        Assert.Equal(VerdictResult.Fail, tick.Verdict!.Result);
+        Assert.Contains("aborted", tick.Verdict.Reason, StringComparison.Ordinal);
+        Assert.Contains("error-ratio", tick.Verdict.Reason, StringComparison.Ordinal);
+        Assert.Equal(0, smoke.Runs);
+        Assert.Equal(EnvironmentState.Failed, (await guard.ReconcileAsync(Env, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task An_aborted_rollout_of_another_image_does_not_fail_the_release()
+    {
+        await StartAsync(1, artifact: 9);
+        cluster.Kustomization = new KustomizationStatus(false, "Progressing", null, "1.0.0@" + Digest(8), "1.0.1@" + Digest(9));
+        cluster.Rollout = Rollout(5) with { Phase = "Degraded", Aborted = true, Message = "older abort" };
+
+        Assert.Equal(TickOutcome.Waiting, (await verifier.TickAsync(Ct)).Outcome);
+        Assert.Null(await store.GetVerificationAsync(Env, 1, Ct));
+    }
+
+    [Fact]
+    public async Task A_stale_abort_from_the_previous_release_does_not_fail_the_new_one()
+    {
+        await StartAsync(1, artifact: 9);
+        cluster.Kustomization = new KustomizationStatus(false, "Progressing", null, "1.0.0@" + Digest(8), "1.0.1@" + Digest(9));
+        // The new spec is applied (generation 4) but the controller has not observed it yet.
+        cluster.Rollout = Rollout(1) with { Generation = 4, ObservedGeneration = 3, Phase = "Degraded", Aborted = true, Message = "previous release" };
+
+        Assert.Equal(TickOutcome.Waiting, (await verifier.TickAsync(Ct)).Outcome);
+        Assert.Null(await store.GetVerificationAsync(Env, 1, Ct));
+    }
+
+    [Theory]
+    [InlineData("Progressing")]
+    [InlineData("Paused")]
+    public async Task Waits_while_the_canary_is_not_healthy_even_if_replica_counts_match(string phase)
+    {
+        await StartAsync(1, artifact: 9);
+        Applied(9);
+        cluster.Rollout = Rollout(1) with { Phase = phase };
+
+        var tick = await verifier.TickAsync(Ct);
+
+        Assert.Equal(TickOutcome.Waiting, tick.Outcome);
+        Assert.Contains(phase, tick.Detail, StringComparison.Ordinal);
+        Assert.Equal(0, smoke.Runs);
+    }
+
+    [Fact]
+    public async Task Passes_a_healthy_canary()
+    {
+        await StartAsync(1, artifact: 9);
+        Applied(9);
+        cluster.Rollout = Rollout(1) with { Phase = "Healthy" };
+
+        Assert.Equal(VerdictResult.Pass, (await verifier.TickAsync(Ct)).Verdict!.Result);
+    }
+
     private async Task StartAsync(int n, int? artifact = null)
     {
         var request = new PromoteRequest(Env, n.ToString("x40", System.Globalization.CultureInfo.InvariantCulture), Repo, Digest(n),
