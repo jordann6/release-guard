@@ -18,8 +18,8 @@ rules:
     resources: [kustomizations]
     resourceNames: [orders-app, orders-migrate]
     verbs: [get]
-  - apiGroups: [apps]
-    resources: [deployments]
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
     resourceNames: [orders-api]
     verbs: [get]
 ---

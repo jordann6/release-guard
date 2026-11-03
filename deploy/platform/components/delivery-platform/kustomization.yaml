@@ -6,6 +6,8 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:
   - monitoring.yaml
+  - argo-rollouts
+  - analysis.yaml
 images:
   - name: otel-collector
     newName: otel/opentelemetry-collector

@@ -75,7 +75,15 @@ docker build --quiet -f "$repo_root/src/Release.Verifier/Dockerfile" -t localhos
 docker push --quiet localhost:5050/release-guard/verifier:local >/dev/null
 
 echo "up: applying the platform layer"
-k apply -k "$repo_root/deploy/platform/local" >/dev/null
+# Server-side apply: the Argo Rollouts CRDs are too large for the last-applied
+# annotation of client-side apply. Two passes: the CRDs must be established before
+# the ClusterAnalysisTemplate in the same layer can be created.
+platform_apply() { k apply --server-side --force-conflicts --field-manager=release-guard-platform -k "$repo_root/deploy/platform/local"; }
+platform_apply >/dev/null 2>&1 || true
+k wait --for condition=established --timeout=60s crd/rollouts.argoproj.io crd/clusteranalysistemplates.argoproj.io >/dev/null
+platform_apply >/dev/null
+k -n argo-rollouts rollout status deploy/argo-rollouts --timeout=180s >/dev/null
+k -n monitoring rollout status deploy/prometheus --timeout=180s >/dev/null
 k -n data rollout status deploy/postgres --timeout=180s >/dev/null
 k -n data rollout status deploy/dynamodb --timeout=180s >/dev/null
 

@@ -48,7 +48,18 @@ spec:
   path: ./app
   prune: true
   wait: true
-  timeout: 4m
+  # Longer than a full canary: start, half the replicas, about 2 minutes of
+  # analysis, then the rest (ADR-0009).
+  timeout: 8m
+  # kstatus does not understand Rollouts; these say when one is done or has failed.
+  # An aborted canary (failed analysis or progress deadline) reports Degraded. Both
+  # require the controller to have seen the current spec: right after a new release
+  # is applied, the status still describes the previous one, which may have aborted.
+  healthCheckExprs:
+    - apiVersion: argoproj.io/v1alpha1
+      kind: Rollout
+      current: status.phase == 'Healthy' && status.observedGeneration == string(metadata.generation)
+      failed: status.phase == 'Degraded' && status.observedGeneration == string(metadata.generation)
   serviceAccountName: orders-reconciler
   postBuild:
     substituteFrom:

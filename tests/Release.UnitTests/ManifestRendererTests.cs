@@ -80,7 +80,7 @@ public sealed class ManifestRendererTests : IDisposable
     {
         // The EKS observability add-on injects init containers that violate the restricted
         // PodSecurity profile of the orders namespace, so no pod of the release can start.
-        var deployment = Yaml(Path.Combine(RepositoryRoot(), "deploy", "release", "app", "deployment.yaml"));
+        var deployment = Yaml(Path.Combine(RepositoryRoot(), "deploy", "release", "app", "rollout.yaml"));
         Assert.Contains($"instrumentation.opentelemetry.io/inject-{language}: \"false\"", deployment, StringComparison.Ordinal);
         Assert.Contains($"cloudwatch.aws.amazon.com/auto-annotate-{language}: \"false\"", deployment, StringComparison.Ordinal);
     }

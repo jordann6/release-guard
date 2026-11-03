@@ -11,7 +11,12 @@ public sealed record KustomizationStatus(
     string? LastAppliedRevision,
     string? LastAttemptedRevision);
 
-/// <summary>What Kubernetes reports for the application Deployment.</summary>
+/// <summary>
+/// What Kubernetes reports for the application workload. For an Argo Rollout (ADR-0009)
+/// <see cref="Phase"/> is its phase (Healthy, Progressing, Paused, Degraded) and
+/// <see cref="Aborted"/> is set when a failed analysis or a stalled canary stopped it;
+/// both stay unset for a plain Deployment.
+/// </summary>
 public sealed record RolloutStatus(
     string? Image,
     long Generation,
@@ -20,7 +25,10 @@ public sealed record RolloutStatus(
     int Updated,
     int Ready,
     int Available,
-    bool ProgressDeadlineExceeded);
+    bool ProgressDeadlineExceeded,
+    string? Phase = null,
+    bool Aborted = false,
+    string? Message = null);
 
 public interface IClusterObserver
 {
@@ -57,8 +65,8 @@ public sealed record TickResult(TickOutcome Outcome, string Detail, Verification
 
 /// <summary>
 /// The in-cluster verifier (ADR-0006). For the release in flight it confirms that Flux
-/// applied the expected artifact, that the Deployment runs the expected image digest and
-/// finished rolling out, and that the service passes a functional smoke test. Only then
+/// applied the expected artifact, that the Rollout runs the expected image digest and
+/// finished its canary, and that the service passes a functional smoke test. Only then
 /// does it record a pass. Publishing manifests is never treated as success.
 /// </summary>
 public sealed partial class ReleaseVerifier(
@@ -131,6 +139,18 @@ public sealed partial class ReleaseVerifier(
             return await RecordAsync(deployment, VerdictResult.Fail, $"Flux failed to apply release {seq}: {kustomization.Reason}: {kustomization.Message}", kustomization.LastAttemptedRevision, null, [], cancellationToken).ConfigureAwait(false);
         }
 
+        // An aborted canary is a verdict even while Flux is still waiting on its health
+        // check: the stable release keeps serving and nothing will progress on its own.
+        // The status must describe the current spec; until the controller observes a new
+        // release, it still reports the previous one, which may itself have aborted.
+        if (EndsWith(kustomization.LastAttemptedRevision, expectedSuffix)
+            && await cluster.GetRolloutAsync(cancellationToken).ConfigureAwait(false) is { Aborted: true } aborted
+            && aborted.ObservedGeneration >= aborted.Generation
+            && string.Equals(aborted.Image, deployment.ImageReference, StringComparison.Ordinal))
+        {
+            return await RecordAsync(deployment, VerdictResult.Fail, $"Canary for release {seq} was aborted: {aborted.Message ?? "no reason reported"}", kustomization.LastAttemptedRevision, aborted.Image, [], cancellationToken).ConfigureAwait(false);
+        }
+
         if (!kustomization.Ready || !EndsWith(kustomization.LastAppliedRevision, expectedSuffix))
         {
             return Wait($"Flux has applied {kustomization.LastAppliedRevision ?? "nothing"}, waiting for {deployment.ArtifactTag}{expectedSuffix} ({kustomization.Reason}).");
@@ -139,7 +159,7 @@ public sealed partial class ReleaseVerifier(
         var rollout = await cluster.GetRolloutAsync(cancellationToken).ConfigureAwait(false);
         if (rollout is null)
         {
-            return Wait("Application Deployment not found.");
+            return Wait("Application Rollout not found.");
         }
 
         if (!string.Equals(rollout.Image, deployment.ImageReference, StringComparison.Ordinal))
@@ -156,10 +176,11 @@ public sealed partial class ReleaseVerifier(
             && rollout.Updated == rollout.Desired
             && rollout.Ready == rollout.Desired
             && rollout.Available == rollout.Desired
-            && rollout.Desired > 0;
+            && rollout.Desired > 0
+            && (rollout.Phase is null || rollout.Phase == "Healthy");
         if (!complete)
         {
-            return Wait($"Rollout in progress: {rollout.Updated} updated, {rollout.Ready} ready, {rollout.Available}/{rollout.Desired} available.");
+            return Wait($"Rollout in progress{(rollout.Phase is { } phase ? $" ({phase})" : "")}: {rollout.Updated} updated, {rollout.Ready} ready, {rollout.Available}/{rollout.Desired} available.");
         }
 
         var steps = await smoke.RunAsync(seq, cancellationToken).ConfigureAwait(false);

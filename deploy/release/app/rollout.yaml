@@ -1,5 +1,10 @@
-apiVersion: apps/v1
-kind: Deployment
+# Canary delivery (ADR-0009). Half the replicas move to the new release, the
+# canary is judged on its own error ratio and p95 latency from real requests, and
+# only then does the rest follow. A failed analysis or a stalled canary aborts the
+# rollout: the stable pods keep serving and the Rollout reports Degraded, which
+# Flux and the verifier record as a failed release (ADR-0006).
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: orders-api
   labels:
@@ -7,13 +12,28 @@ metadata:
 spec:
   replicas: 2
   revisionHistoryLimit: 5
-  # A rollout that cannot make progress in 4 minutes is reported as failed (ADR-0003).
+  # A canary that cannot become available in 4 minutes aborts (ADR-0003, ADR-0009).
   progressDeadlineSeconds: 240
+  progressDeadlineAbort: true
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
+    canary:
       maxSurge: 1
       maxUnavailable: 0
+      steps:
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: http-canary
+                clusterScope: true
+            args:
+              - name: service-name
+                value: orders-api
+              # The release sequence, stamped on the Rollout by releasectl. The app
+              # reports the same value as service.version (Release__Version).
+              - name: service-version
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['release-guard/seq']
   selector:
     matchLabels:
       app.kubernetes.io/name: orders-api

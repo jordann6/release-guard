@@ -36,7 +36,12 @@ record() {
 
 status_json() { releasectl status --table "$table" --dynamo-endpoint "$dynamo"; }
 lock_state() { status_json | jq -r '.lock.state'; }
-running_image() { kubectl --context "$kube_context" -n orders get deploy orders-api -o jsonpath='{.spec.template.spec.containers[0].image}'; }
+running_image() { kubectl --context "$kube_context" -n orders get rollout orders-api -o jsonpath='{.spec.template.spec.containers[0].image}'; }
+# Images of the application pods that are Ready, sorted and de-duplicated.
+serving_images() {
+  kubectl --context "$kube_context" -n orders get pods -l app.kubernetes.io/name=orders-api -o json \
+    | jq -r '[.items[] | select(any(.status.conditions[]?; .type == "Ready" and .status == "True")) | .spec.containers[0].image] | unique | join(",")'
+}
 applied_revision() { kubectl --context "$kube_context" -n orders get kustomization orders-app -o jsonpath='{.status.lastAppliedRevision}'; }
 synthetic_commit() { printf '%s-%s' "$1" "$(date +%s%N)" | shasum | cut -c1-40; }
 
@@ -56,6 +61,12 @@ variant() {
       jq --arg v "$name" '. + {Build: {Variant: $v}}' "$dir/src/Orders.Api/appsettings.json" > "$dir/a.json"
       mv "$dir/a.json" "$dir/src/Orders.Api/appsettings.json"
       perl -0pi -e 's/app\.UseExceptionHandler\(\);/if (string.IsNullOrEmpty(app.Configuration["Orders:PaymentsEndpoint"]))\n{\n    throw new InvalidOperationException("Orders:PaymentsEndpoint is required.");\n}\n\napp.UseExceptionHandler();/' "$dir/src/Orders.Api/Program.cs" ;;
+    degraded)
+      # Starts and passes every probe, but fails about 30% of order requests. Only the
+      # canary analysis of real request outcomes can tell it apart (ADR-0009).
+      jq --arg v "$name" '. + {Build: {Variant: $v}}' "$dir/src/Orders.Api/appsettings.json" > "$dir/a.json"
+      mv "$dir/a.json" "$dir/src/Orders.Api/appsettings.json"
+      perl -0pi -e 's/app\.UseExceptionHandler\(\);/app.UseExceptionHandler();\n\napp.Use(async (ctx, next) =>\n{\n    if (ctx.Request.Path.StartsWithSegments("\/orders") && Random.Shared.NextDouble() < 0.3)\n    {\n        ctx.Response.StatusCode = 500;\n        return;\n    }\n\n    await next();\n});/' "$dir/src/Orders.Api/Program.cs" ;;
     vulnerable)
       # Runtime image pinned back to .NET 10.0.0, which has fixable critical CVEs.
       sed -i '' 's|aspnet:10.0-noble-chiseled@sha256:[a-f0-9]*|aspnet:10.0.0-noble-chiseled@sha256:5730fa91fab5ec91f69661b86897249ad6a01c8da6da557695e9da4c6bc83621|' "$dir/src/Orders.Api/Dockerfile" ;;
@@ -89,7 +100,7 @@ ship() {
     return
   fi
   set +e
-  releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$seq" --timeout 00:06:00 --interval 00:00:05 > "$work/$name.wait.json"
+  releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$seq" --timeout 00:08:00 --interval 00:00:05 > "$work/$name.wait.json"
   set -e
   echo "    verdict: $(jq -r '.verdict.result // "none"'  "$work/$name.wait.json"): $(jq -r '.verdict.reason // ""' "$work/$name.wait.json")" >&2
   jq -r '.verdict.result // "NoVerdict"' "$work/$name.wait.json"
@@ -128,7 +139,7 @@ wait
 set -e
 outcomes="$(jq -r '.outcome' "$work/race-a.json" "$work/race-b.json" | sort | paste -sd, -)"
 winner_seq="$(jq -r 'select(.outcome == "Started") | .seq' "$work/race-a.json" "$work/race-b.json")"
-releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$winner_seq" --timeout 00:06:00 --interval 00:00:05 >/dev/null || true
+releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$winner_seq" --timeout 00:08:00 --interval 00:00:05 >/dev/null || true
 healthy_digest="$(jq -r 'select(.outcome == "Started") | .image' "$work/race-a.json" "$work/race-b.json" | sed 's/.*@//')"
 record "Blocked,Started then Healthy" "$outcomes then $(lock_state)"
 
@@ -148,7 +159,7 @@ set +e
 releasectl rollback --table "$table" --dynamo-endpoint "$dynamo" --deploy-repo "$deploy_repo" --provider generic --insecure-registry > "$work/rollback.json"
 set -e
 rb_seq="$(jq -r '.seq' "$work/rollback.json")"
-releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$rb_seq" --timeout 00:06:00 --interval 00:00:05 >/dev/null || true
+releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$rb_seq" --timeout 00:08:00 --interval 00:00:05 >/dev/null || true
 sleep 45  # past at least one more Flux reconcile interval: desired state must stay on the restored release
 image_ok="$( [[ "$(running_image)" == "$cluster_repo@$healthy_digest" ]] && echo 'restored image running' || echo "wrong image $(running_image)")"
 rev_ok="$( [[ "$(applied_revision)" == "$(jq -r '.tag' "$work/rollback.json")@"* ]] && echo "Flux on $(jq -r '.tag' "$work/rollback.json")" || echo "Flux on $(applied_revision)")"
@@ -171,7 +182,7 @@ mid_state="$(lock_state)"
 promote "$commit" "$digest" "$work/good-5.trivy.json" > "$work/good-5.retry.json"
 set -e
 retry_seq="$(jq -r '.seq' "$work/good-5.retry.json")"
-releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$retry_seq" --timeout 00:06:00 --interval 00:00:05 > "$work/good-5.wait.json" || true
+releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$retry_seq" --timeout 00:08:00 --interval 00:00:05 > "$work/good-5.wait.json" || true
 record "Deploying, then Resumed, Pass" "$mid_state, then $(jq -r '.outcome' "$work/good-5.retry.json"), $(jq -r '.verdict.result' "$work/good-5.wait.json")"
 
 begin "Abandoned promotion times out at the lease and blocks; rollback recovers"
@@ -186,8 +197,22 @@ blocked="$(release good-7 good)"
 set +e
 releasectl rollback --table "$table" --dynamo-endpoint "$dynamo" --deploy-repo "$deploy_repo" --provider generic --insecure-registry > "$work/rollback2.json"
 set -e
-releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$(jq -r '.seq' "$work/rollback2.json")" --timeout 00:06:00 --interval 00:00:05 >/dev/null || true
+releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$(jq -r '.seq' "$work/rollback2.json")" --timeout 00:08:00 --interval 00:00:05 >/dev/null || true
 record "VerifyTimeout, Blocked, Healthy" "$timed_out, $blocked, $(lock_state)"
+
+begin "Canary analysis stops a release that fails 30% of requests; stable keeps serving"
+stable_image="$(running_image)"
+verdict="$(release degraded-1 degraded)"
+sleep 10
+serving="$(serving_images)"
+record "Fail, Failed, aborted, stable only" "$verdict, $(lock_state), $(kubectl --context "$kube_context" -n orders get rollout orders-api -o jsonpath='{.status.abort}' | sed 's/true/aborted/'), $( [[ "$serving" == "$stable_image" ]] && echo 'stable only' || echo "serving $serving")"
+
+begin "Rollback after an aborted canary restores a healthy release"
+set +e
+releasectl rollback --table "$table" --dynamo-endpoint "$dynamo" --deploy-repo "$deploy_repo" --provider generic --insecure-registry > "$work/rollback3.json"
+set -e
+releasectl wait --table "$table" --dynamo-endpoint "$dynamo" --seq "$(jq -r '.seq' "$work/rollback3.json")" --timeout 00:08:00 --interval 00:00:05 >/dev/null || true
+record "Healthy, Healthy" "$(lock_state), $(kubectl --context "$kube_context" -n orders get rollout orders-api -o jsonpath='{.status.phase}')"
 
 echo
 cat "$results"
