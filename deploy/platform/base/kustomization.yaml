@@ -9,3 +9,10 @@ resources:
   - flux-delivery.yaml
   - migrator.yaml
   - verifier.yaml
+  - synthetic-traffic.yaml
+components:
+  - ../components/delivery-platform
+images:
+  - name: curl
+    newName: curlimages/curl
+    digest: sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40 # 8.17.0

@@ -23,6 +23,9 @@ configMapGenerator:
     literals:
       - Database__UseIamAuthentication=false
       - Database__Region=us-east-1
+      # Metrics feed canary analysis (ADR-0009); a short interval keeps analysis windows small.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.monitoring.svc.cluster.local:4317
+      - OTEL_METRIC_EXPORT_INTERVAL=5000
 generatorOptions:
   disableNameSuffixHash: true
 patches:
