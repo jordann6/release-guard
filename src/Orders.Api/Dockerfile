@@ -3,7 +3,7 @@
 #   docker build -f src/Orders.Api/Dockerfile -t orders-api .
 # Base images are pinned by multi-arch index digest (ADR-0007). Dependabot updates them.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea AS build
 WORKDIR /src
 
 # Restore first so the dependency layer is cached independently of source changes.
